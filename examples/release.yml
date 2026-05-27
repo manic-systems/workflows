@@ -1,0 +1,60 @@
+# Copy this into a consuming repo as .github/workflows/release.yml.
+#
+# The workflow_run trigger MUST live in the caller. Set `workflows:` to the name
+# of the repo's CI workflow that should gate releases. This repo owns the build
+# matrix; the reusable release.yml is invoked twice (prepare / finalize) around
+# the per-target build.
+name: Tag and Release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Build and Test with Cargo]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write      # create the release / push the tag
+  id-token: write      # required for build provenance attestations
+  attestations: write  # required for build provenance attestations
+
+jobs:
+  prepare:
+    # Only release on a successful upstream run (or a manual dispatch).
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    with:
+      stage: prepare
+      # version-command: "nix run nixpkgs#fq -- -r '.workspace.package.version' Cargo.toml"
+      # tag-prefix: v
+      # default-branch: main
+      # install-nix: true
+
+  build:
+    needs: prepare
+    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.skip != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    suffix: linux-amd64 }
+          - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
+          - { os: macos-latest,     suffix: macos-arm64 }
+    uses: manic-systems/workflows/.github/workflows/rust-build.yml@main
+    with:
+      upload: true
+      version: ${{ needs.prepare.outputs.version }}
+      os: ${{ matrix.os }}
+      suffix: ${{ matrix.suffix }}
+      # build-command: nix build .#ndg   # default: nix build (the flake default package)
+      # binary-name: ndg                 # defaults to the repo name
+      # asset-prefix: ndg                # defaults to the repo name
+
+  finalize:
+    needs: [prepare, build]
+    if: ${{ needs.prepare.outputs.skip != 'true' && needs.build.result == 'success' }}
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    with:
+      stage: finalize
+      version: ${{ needs.prepare.outputs.version }}
+      # asset-prefix: ndg  # must match the build job if overridden there

@@ -1,0 +1,96 @@
+# Rust CI checks on one runner. Nix-first by default (`nix flake check`), with
+# opt-in cargo test / clippy / fmt for repos that want them in addition to or
+# instead of the flake check. Designed to be called per matrix leg from the
+# consuming repo's CI workflow.
+#
+# All steps are toggleable. The defaults: flake-check ON; cargo steps OFF.
+name: Rust Checks
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: "Runner image, e.g. ubuntu-latest, ubuntu-24.04-arm, macos-latest."
+        type: string
+        required: true
+
+      # Nix
+      install-nix:
+        description: "Install Nix (needed by `nix flake check`)."
+        type: boolean
+        default: true
+      flake-check:
+        description: "Run the flake-check command."
+        type: boolean
+        default: true
+      flake-check-command:
+        description: "Command run when flake-check is true."
+        type: string
+        default: "nix flake check"
+
+      # Rust toolchain (only installed when any cargo step is enabled)
+      rust-toolchain:
+        description: "Rust toolchain channel passed to setup-rust-toolchain."
+        type: string
+        default: "stable"
+
+      # Cargo opt-ins
+      test:
+        description: "Run cargo test."
+        type: boolean
+        default: false
+      test-command:
+        type: string
+        default: "cargo test --all-features"
+      clippy:
+        description: "Run cargo clippy with -D warnings."
+        type: boolean
+        default: false
+      clippy-command:
+        type: string
+        default: "cargo clippy --all-targets --all-features -- -D warnings"
+      fmt:
+        description: "Run cargo fmt --check."
+        type: boolean
+        default: false
+      fmt-command:
+        type: string
+        default: "cargo fmt --all -- --check"
+
+jobs:
+  checks:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Nix
+        if: inputs.install-nix && inputs.flake-check
+        uses: cachix/install-nix-action@master
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Rust
+        if: inputs.test || inputs.clippy || inputs.fmt
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+          # Install both unconditionally — cheap, and avoids brittle conditional
+          # comma-joining of the components string.
+          components: clippy, rustfmt
+
+      # fmt first: cheap, catches the most trivial regressions before slow steps.
+      - name: cargo fmt
+        if: inputs.fmt
+        run: ${{ inputs.fmt-command }}
+
+      - name: cargo clippy
+        if: inputs.clippy
+        run: ${{ inputs.clippy-command }}
+
+      - name: cargo test
+        if: inputs.test
+        run: ${{ inputs.test-command }}
+
+      - name: nix flake check
+        if: inputs.flake-check
+        run: ${{ inputs.flake-check-command }}

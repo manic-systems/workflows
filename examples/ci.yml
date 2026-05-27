@@ -1,0 +1,26 @@
+# Copy this into a consuming repo as .github/workflows/ci.yml.
+#
+# Reuses rust-checks.yml as a CI matrix. `nix flake check` is on by default;
+# enable cargo test / clippy / fmt as needed. This is also the workflow the
+# release pipeline gates on — its `name:` must match `workflows:` in the
+# release caller's workflow_run trigger.
+name: Build and Test with Cargo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    uses: manic-systems/workflows/.github/workflows/rust-checks.yml@main
+    with:
+      os: ${{ matrix.os }}
+      # flake-check is on by default; opt in to the cargo checks you want:
+      # test: true
+      # clippy: true
+      # fmt: true

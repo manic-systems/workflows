@@ -1,0 +1,246 @@
+# Release bookkeeping that brackets the build matrix. Called TWICE by the
+# caller: `stage: prepare` before the matrix (version check, tag, create the
+# release) and `stage: finalize` after (release notes + SHA256SUMS). The build
+# itself is the separate rust-build.yml, invoked per matrix leg in between.
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        description: "'prepare' (tag + create release) or 'finalize' (notes + checksums)."
+        type: string
+        required: true
+      version:
+        description: "Required for stage=finalize: the tag produced by the prepare stage."
+        type: string
+        default: ""
+      version-command:
+        description: "prepare: shell command that prints the bare version (no tag prefix) to stdout."
+        type: string
+        default: "nix run nixpkgs#fq -- -r '.workspace.package.version' Cargo.toml"
+      tag-prefix:
+        description: "prepare: prefix prepended to the version to form the git tag."
+        type: string
+        default: "v"
+      default-branch:
+        description: "prepare: branch used to detect whether the version changed."
+        type: string
+        default: "main"
+      install-nix:
+        description: "prepare: install Nix before reading the version."
+        type: boolean
+        default: true
+      asset-prefix:
+        description: "finalize: prefix of the assets to checksum. Defaults to the repository name."
+        type: string
+        default: ""
+    outputs:
+      version:
+        description: "prepare: the computed tag, e.g. v1.2.3."
+        value: ${{ jobs.prepare.outputs.version }}
+      skip:
+        description: "prepare: true when the version is unchanged and the release should be skipped."
+        value: ${{ jobs.prepare.outputs.skip }}
+
+permissions:
+  contents: write
+
+jobs:
+  # ---- stage: prepare ----
+  prepare:
+    if: inputs.stage == 'prepare'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read_version.outputs.version }}
+      skip: ${{ steps.check_version.outputs.skip_workflow }}
+    steps:
+      - uses: actions/checkout@v6
+        name: Checkout
+
+      - name: Install Nix
+        if: inputs.install-nix
+        uses: cachix/install-nix-action@master
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read version
+        id: read_version
+        run: |
+          RAW="$(${{ inputs.version-command }})"
+          echo "version=${{ inputs.tag-prefix }}${RAW}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if version changed
+        id: check_version
+        run: |
+          VERSION="${{ steps.read_version.outputs.version }}"
+          BRANCH="${{ inputs.default-branch }}"
+
+          echo "Checking if version $VERSION has changed since last tag..."
+
+          if git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
+            echo "Tag $VERSION already exists on remote."
+
+            LAST_TAG_ON_BRANCH=$(git describe --tags --abbrev=0 "origin/${BRANCH}" 2>/dev/null || echo "")
+            echo "Last tag on branch: $LAST_TAG_ON_BRANCH"
+
+            if [ "$LAST_TAG_ON_BRANCH" = "$VERSION" ]; then
+              echo "Version has not changed since last tag on ${BRANCH}. Exiting gracefully."
+            else
+              echo "Version differs from last tag on branch but tag exists on remote (likely a re-tag). Exiting gracefully."
+            fi
+            echo "skip_workflow=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Version is new. Proceeding with release."
+          echo "skip_workflow=false" >> "$GITHUB_OUTPUT"
+
+      - name: Tag
+        if: steps.check_version.outputs.skip_workflow != 'true'
+        run: |
+          set -ex
+
+          VERSION="${{ steps.read_version.outputs.version }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+
+          git fetch --tags
+          if git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
+            echo "Tag $VERSION successfully pushed to remote."
+          else
+            echo "::error:: Tag $VERSION not found on remote after push." >&2
+            exit 1
+          fi
+
+      - name: Detect pre-release
+        id: prerelease_check
+        if: steps.check_version.outputs.skip_workflow != 'true'
+        run: |
+          VERSION="${{ steps.read_version.outputs.version }}"
+          if [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-.*$ ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Create the release up front so the parallel rust-build legs upload
+      # assets into an existing release instead of racing to create it.
+      - name: Create Release
+        if: steps.check_version.outputs.skip_workflow != 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.read_version.outputs.version }}
+          draft: false
+          prerelease: ${{ steps.prerelease_check.outputs.is_prerelease }}
+          generate_release_notes: false
+          name: Release ${{ steps.read_version.outputs.version }}
+          body: |
+            ## Release ${{ steps.read_version.outputs.version }}
+
+            **Note**: Assets will be uploaded once builds complete successfully.
+
+            <!-- Changelog will be generated after successful asset uploads -->
+
+  # ---- stage: finalize ----
+  release-notes:
+    if: inputs.stage == 'finalize'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Find previous stable release
+        id: prev_stable
+        run: |
+          CURRENT_TAG="${{ inputs.version }}"
+
+          # Fetch all tags
+          git fetch --tags
+
+          # Get all stable tags (pure semver: vX.Y.Z with no suffix)
+          STABLE_TAGS=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+
+          # Determine previous stable based on whether current is prerelease or stable
+          if [[ "$CURRENT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.*$ ]]; then
+            # Current is prerelease - get latest stable
+            PREV_STABLE=$(echo "$STABLE_TAGS" | tail -n1)
+          else
+            # Current is stable - get the one before it
+            PREV_STABLE=$(echo "$STABLE_TAGS" | grep -B1 "^${CURRENT_TAG}$" | head -n1)
+            if [ "$PREV_STABLE" = "$CURRENT_TAG" ] || [ -z "$PREV_STABLE" ]; then
+              # First release or not found - use the previous stable
+              PREV_STABLE=$(echo "$STABLE_TAGS" | tail -n2 | head -n1)
+            fi
+          fi
+
+          if [ -z "$PREV_STABLE" ]; then
+            echo "::warning::No previous stable release found. This may be the first release."
+          fi
+
+          echo "previous_stable=${PREV_STABLE}" >> "$GITHUB_OUTPUT"
+          echo "Found previous stable release: ${PREV_STABLE}"
+
+      - name: Generate and update release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT_TAG="${{ inputs.version }}"
+          PREV_TAG="${{ steps.prev_stable.outputs.previous_stable }}"
+
+          # Generate release notes using GitHub API with custom previous tag
+          NOTES_JSON=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${{ github.repository }}/releases/generate-notes" \
+            -f tag_name="${CURRENT_TAG}" \
+            -f target_commitish="${{ github.sha }}" \
+            -f previous_tag_name="${PREV_TAG}")
+
+          # Extract the body from the JSON response
+          RELEASE_BODY=$(echo "$NOTES_JSON" | jq -r '.body')
+
+          # Update the release with the generated notes
+          gh release edit "${CURRENT_TAG}" --notes "${RELEASE_BODY}"
+
+  checksums:
+    if: inputs.stage == 'finalize'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve asset prefix
+        id: prefix
+        run: echo "value=${{ inputs.asset-prefix || github.event.repository.name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Download Assets
+        uses: robinraju/release-downloader@v1
+        with:
+          tag: ${{ inputs.version }}
+          fileName: "${{ steps.prefix.outputs.value }}-*"
+          out-file-path: "."
+
+      # Github provides checksums for uploaded assets, and this will be our single
+      # source of truth that verifies whether the provided checksums are the same
+      # as the ones we've calculated.
+      - name: Generate SHA256SUMS
+        shell: bash
+        env:
+          ASSET_PREFIX: ${{ steps.prefix.outputs.value }}
+        run: |
+          mapfile -d '' files < <(find . -maxdepth 1 -type f -name "${ASSET_PREFIX}-*" -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            : > SHA256SUMS
+          else
+            for f in "${files[@]}"; do
+            sha256sum "$f"
+            done | sed 's|^\./||' > SHA256SUMS
+          fi
+
+      - name: Upload Checksums
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.version }}
+          files: SHA256SUMS

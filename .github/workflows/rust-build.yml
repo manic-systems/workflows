@@ -1,0 +1,90 @@
+# Build a project with Nix on one runner. Dual-use:
+#   * CI:      call with upload=false (the default) to verify the build compiles.
+#   * Release: call with upload=true + version/suffix to attest and upload the
+#              built binary as a release asset.
+# Tests / clippy / fmt belong in rust-checks.yml — this workflow only builds.
+# The caller drives the matrix (one call per runner) and owns its permissions —
+# upload=true requires the caller to grant contents/id-token/attestations write.
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: "Runner image, e.g. ubuntu-latest, ubuntu-24.04-arm, macos-latest."
+        type: string
+        required: true
+      build-command:
+        description: "Command that builds the project. Defaults to `nix build` (the flake's default package)."
+        type: string
+        default: "nix build"
+      install-nix:
+        description: "Install Nix before building."
+        type: boolean
+        default: true
+      upload:
+        description: "Attest provenance and upload the built binary to a release. Leave false for plain CI builds."
+        type: boolean
+        default: false
+      version:
+        description: "Required when upload=true: the release tag to upload the asset to."
+        type: string
+        default: ""
+      suffix:
+        description: "Required when upload=true: asset filename suffix; the asset is <asset-prefix>-<suffix>."
+        type: string
+        default: ""
+      binary-name:
+        description: "Built binary name under the build output. Defaults to the repository name."
+        type: string
+        default: ""
+      asset-prefix:
+        description: "Prefix for the asset filename. Defaults to the repository name."
+        type: string
+        default: ""
+      artifact-path:
+        description: "Path to the built binary. Defaults to result/bin/<binary-name>."
+        type: string
+        default: ""
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Nix
+        if: inputs.install-nix
+        uses: cachix/install-nix-action@master
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        run: ${{ inputs.build-command }}
+
+      - name: Prepare binary
+        if: inputs.upload
+        run: |
+          BIN="${{ inputs.binary-name || github.event.repository.name }}"
+          ART="${{ inputs.artifact-path }}"
+          [ -n "$ART" ] || ART="result/bin/${BIN}"
+          ASSET="${{ inputs.asset-prefix || github.event.repository.name }}-${{ inputs.suffix }}"
+          # `result` is a read-only store symlink; dereference and make writable.
+          cp -L "$ART" "$ASSET"
+          chmod +w "$ASSET"
+          echo "asset=${ASSET}" >> "$GITHUB_ENV"
+
+      - name: Attest build provenance
+        if: inputs.upload
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: ${{ env.asset }}
+
+      - name: Upload Release Asset
+        if: inputs.upload
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.version }}
+          files: ${{ env.asset }}
+          overwrite_files: true
+          fail_on_unmatched_files: true

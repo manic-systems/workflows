@@ -18,6 +18,10 @@ on:
         description: "Command that builds the project. Defaults to `nix build` (the flake's default package)."
         type: string
         default: "nix build"
+      working-directory:
+        description: "Directory the build runs in. Set for projects living in a subdirectory; artifact-path is resolved relative to it."
+        type: string
+        default: "."
       install-nix:
         description: "Install Nix before building."
         type: boolean
@@ -51,40 +55,49 @@ jobs:
   build:
     runs-on: ${{ inputs.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Install Nix
         if: inputs.install-nix
-        uses: cachix/install-nix-action@master
+        uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build
-        run: ${{ inputs.build-command }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BUILD_COMMAND: ${{ inputs.build-command }}
+        run: $BUILD_COMMAND
 
       - name: Prepare binary
         if: inputs.upload
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BINARY_NAME: ${{ inputs.binary-name || github.event.repository.name }}
+          ARTIFACT_PATH: ${{ inputs.artifact-path }}
+          ASSET_PREFIX: ${{ inputs.asset-prefix || github.event.repository.name }}
+          SUFFIX: ${{ inputs.suffix }}
         run: |
-          BIN="${{ inputs.binary-name || github.event.repository.name }}"
-          ART="${{ inputs.artifact-path }}"
+          BIN="${BINARY_NAME}"
+          ART="${ARTIFACT_PATH}"
           [ -n "$ART" ] || ART="result/bin/${BIN}"
-          ASSET="${{ inputs.asset-prefix || github.event.repository.name }}-${{ inputs.suffix }}"
-          # `result` is a read-only store symlink; dereference and make writable.
-          cp -L "$ART" "$ASSET"
-          chmod +w "$ASSET"
+          ASSET="${ASSET_PREFIX}-${SUFFIX}"
+          cp -L "$ART" "${GITHUB_WORKSPACE}/${ASSET}"
+          chmod +w "${GITHUB_WORKSPACE}/${ASSET}"
           echo "asset=${ASSET}" >> "$GITHUB_ENV"
 
       - name: Attest build provenance
         if: inputs.upload
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@78e6cbd37d0ac1a40113c04f2037dacf1ea3f12e # v4
         with:
           subject-path: ${{ env.asset }}
 
       - name: Upload Release Asset
         if: inputs.upload
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ inputs.version }}
-          files: ${{ env.asset }}
-          overwrite_files: true
-          fail_on_unmatched_files: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPLOAD_TAG: ${{ inputs.version }}
+          UPLOAD_ASSET: ${{ env.asset }}
+        run: gh release upload "${UPLOAD_TAG}" "${UPLOAD_ASSET}" --clobber

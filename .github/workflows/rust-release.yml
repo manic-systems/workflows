@@ -1,18 +1,21 @@
-# Release bookkeeping that brackets the build matrix. Called TWICE by the
-# caller: `stage: prepare` before the matrix (version check, tag, create the
-# release) and `stage: finalize` after (release notes + SHA256SUMS). The build
-# itself is the separate rust-build.yml, invoked per matrix leg in between.
+# Release bookkeeping that brackets the build matrix. Called by the caller with
+# a `stage` input selecting one of:
+#   * prepare  — before the matrix: version check, tag, create the release.
+#   * finalize — after the matrix: release notes + SHA256SUMS.
+#   * publish  — optional: publish to crates.io via Trusted Publishing (OIDC,
+#                no API token). Wire it after finalize.
+# The build itself is the separate rust-build.yml, invoked per matrix leg.
 name: Release
 
 on:
   workflow_call:
     inputs:
       stage:
-        description: "'prepare' (tag + create release) or 'finalize' (notes + checksums)."
+        description: "'prepare' (tag + create release), 'finalize' (notes + checksums), or 'publish' (crates.io)."
         type: string
         required: true
       version:
-        description: "Required for stage=finalize: the tag produced by the prepare stage."
+        description: "Required for stage=finalize/publish: the tag produced by the prepare stage."
         type: string
         default: ""
       version-command:
@@ -35,6 +38,22 @@ on:
         description: "finalize: prefix of the assets to checksum. Defaults to the repository name."
         type: string
         default: ""
+      publish-command:
+        description: "publish: command that publishes to crates.io. CARGO_REGISTRY_TOKEN is set from the Trusted Publishing exchange."
+        type: string
+        default: "cargo publish"
+      publish-working-directory:
+        description: "publish: directory the publish command runs in. Set for a crate in a subdirectory."
+        type: string
+        default: "."
+      publish-environment:
+        description: "publish: GitHub Environment to run the publish job in. Match the environment set on the crates.io Trusted Publisher config; empty means none."
+        type: string
+        default: ""
+      rust-toolchain:
+        description: "publish: Rust toolchain channel installed before publishing."
+        type: string
+        default: "stable"
     outputs:
       version:
         description: "prepare: the computed tag, e.g. v1.2.3."
@@ -55,27 +74,30 @@ jobs:
       version: ${{ steps.read_version.outputs.version }}
       skip: ${{ steps.check_version.outputs.skip_workflow }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         name: Checkout
 
       - name: Install Nix
         if: inputs.install-nix
-        uses: cachix/install-nix-action@master
+        uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Read version
         id: read_version
+        env:
+          VERSION_COMMAND: ${{ inputs.version-command }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
         run: |
-          RAW="$(${{ inputs.version-command }})"
-          echo "version=${{ inputs.tag-prefix }}${RAW}" >> "$GITHUB_OUTPUT"
+          RAW="$($VERSION_COMMAND)"
+          echo "version=${TAG_PREFIX}${RAW}" >> "$GITHUB_OUTPUT"
 
       - name: Check if version changed
         id: check_version
+        env:
+          VERSION: ${{ steps.read_version.outputs.version }}
+          BRANCH: ${{ inputs.default-branch }}
         run: |
-          VERSION="${{ steps.read_version.outputs.version }}"
-          BRANCH="${{ inputs.default-branch }}"
-
           echo "Checking if version $VERSION has changed since last tag..."
 
           if git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
@@ -98,26 +120,28 @@ jobs:
 
       - name: Tag
         if: steps.check_version.outputs.skip_workflow != 'true'
+        env:
+          VERSION: ${{ steps.read_version.outputs.version }}
         run: |
           set -ex
 
-          VERSION="${{ steps.read_version.outputs.version }}"
           git tag "$VERSION"
           git push origin "$VERSION"
 
           git fetch --tags
           if git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
-            echo "Tag $VERSION successfully pushed to remote."
+            echo "Tag ${VERSION} successfully pushed to remote."
           else
-            echo "::error:: Tag $VERSION not found on remote after push." >&2
+            echo "::error:: Tag ${VERSION} not found on remote after push." >&2
             exit 1
           fi
 
       - name: Detect pre-release
         id: prerelease_check
         if: steps.check_version.outputs.skip_workflow != 'true'
+        env:
+          VERSION: ${{ steps.read_version.outputs.version }}
         run: |
-          VERSION="${{ steps.read_version.outputs.version }}"
           if [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+-.*$ ]]; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           else
@@ -128,34 +152,42 @@ jobs:
       # assets into an existing release instead of racing to create it.
       - name: Create Release
         if: steps.check_version.outputs.skip_workflow != 'true'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.read_version.outputs.version }}
-          draft: false
-          prerelease: ${{ steps.prerelease_check.outputs.is_prerelease }}
-          generate_release_notes: false
-          name: Release ${{ steps.read_version.outputs.version }}
-          body: |
-            ## Release ${{ steps.read_version.outputs.version }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.read_version.outputs.version }}
+          IS_PRERELEASE: ${{ steps.prerelease_check.outputs.is_prerelease }}
+        run: |
+          FLAGS=()
+          if [[ "${IS_PRERELEASE}" == "true" ]]; then
+            FLAGS+=(--prerelease)
+          fi
+          gh release create "${VERSION}" \
+            --title "Release ${VERSION}" \
+            --notes "$(cat <<EOF
+          ## Release ${VERSION}
 
-            **Note**: Assets will be uploaded once builds complete successfully.
+          **Note**: Assets will be uploaded once builds complete successfully.
 
-            <!-- Changelog will be generated after successful asset uploads -->
+          <!-- Changelog will be generated after successful asset uploads -->
+          EOF
+          )" \
+            "${FLAGS[@]}"
 
   # ---- stage: finalize ----
   release-notes:
     if: inputs.stage == 'finalize'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Find previous stable release
         id: prev_stable
+        env:
+          CURRENT_TAG: ${{ inputs.version }}
         run: |
-          CURRENT_TAG="${{ inputs.version }}"
-
           # Fetch all tags
           git fetch --tags
 
@@ -185,10 +217,9 @@ jobs:
       - name: Generate and update release notes
         env:
           GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ inputs.version }}
+          PREV_TAG: ${{ steps.prev_stable.outputs.previous_stable }}
         run: |
-          CURRENT_TAG="${{ inputs.version }}"
-          PREV_TAG="${{ steps.prev_stable.outputs.previous_stable }}"
-
           # Generate release notes using GitHub API with custom previous tag
           NOTES_JSON=$(gh api \
             --method POST \
@@ -209,14 +240,18 @@ jobs:
     if: inputs.stage == 'finalize'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Resolve asset prefix
         id: prefix
-        run: echo "value=${{ inputs.asset-prefix || github.event.repository.name }}" >> "$GITHUB_OUTPUT"
+        env:
+          ASSET_PREFIX: ${{ inputs.asset-prefix || github.event.repository.name }}
+        run: echo "value=${ASSET_PREFIX}" >> "$GITHUB_OUTPUT"
 
       - name: Download Assets
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1
         with:
           tag: ${{ inputs.version }}
           fileName: "${{ steps.prefix.outputs.value }}-*"
@@ -240,7 +275,42 @@ jobs:
           fi
 
       - name: Upload Checksums
-        uses: softprops/action-gh-release@v3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPLOAD_TAG: ${{ inputs.version }}
+        run: gh release upload "${UPLOAD_TAG}" SHA256SUMS --clobber
+
+  # ---- stage: publish ----
+  # Publish to crates.io via Trusted Publishing: GitHub's OIDC identity is
+  # exchanged for a short-lived registry token, so no CARGO_REGISTRY_TOKEN
+  # secret is stored. Requires a one-time Trusted Publisher config on crates.io
+  # (Settings → Trusted Publishing) for this repo, created after an initial
+  # manual publish. The caller must grant `id-token: write` to this workflow.
+  publish:
+    if: inputs.stage == 'publish'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.publish-environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          tag_name: ${{ inputs.version }}
-          files: SHA256SUMS
+          ref: ${{ inputs.version }}
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          toolchain: ${{ inputs.rust-toolchain }}
+
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+
+      - name: Publish
+        working-directory: ${{ inputs.publish-working-directory }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          PUBLISH_COMMAND: ${{ inputs.publish-command }}
+        run: $PUBLISH_COMMAND

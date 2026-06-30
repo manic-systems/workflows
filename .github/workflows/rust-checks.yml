@@ -13,6 +13,10 @@ on:
         description: "Runner image, e.g. ubuntu-latest, ubuntu-24.04-arm, macos-latest."
         type: string
         required: true
+      working-directory:
+        description: "Directory the cargo steps run in. Set for crates living in a subdirectory; the flake check still runs from the repo root."
+        type: string
+        default: "."
 
       # Nix
       install-nix:
@@ -61,36 +65,46 @@ jobs:
   checks:
     runs-on: ${{ inputs.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Install Nix
         if: inputs.install-nix && inputs.flake-check
-        uses: cachix/install-nix-action@master
+        uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Rust
         if: inputs.test || inputs.clippy || inputs.fmt
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
-          # Install both unconditionally — cheap, and avoids brittle conditional
-          # comma-joining of the components string.
           components: clippy, rustfmt
 
-      # fmt first: cheap, catches the most trivial regressions before slow steps.
       - name: cargo fmt
         if: inputs.fmt
-        run: ${{ inputs.fmt-command }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          FMT_COMMAND: ${{ inputs.fmt-command }}
+        run: $FMT_COMMAND
 
       - name: cargo clippy
         if: inputs.clippy
-        run: ${{ inputs.clippy-command }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          CLIPPY_COMMAND: ${{ inputs.clippy-command }}
+        run: $CLIPPY_COMMAND
 
       - name: cargo test
         if: inputs.test
-        run: ${{ inputs.test-command }}
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          TEST_COMMAND: ${{ inputs.test-command }}
+        run: $TEST_COMMAND
 
       - name: nix flake check
         if: inputs.flake-check
-        run: ${{ inputs.flake-check-command }}
+        env:
+          FLAKE_CHECK_COMMAND: ${{ inputs.flake-check-command }}
+        run: $FLAKE_CHECK_COMMAND

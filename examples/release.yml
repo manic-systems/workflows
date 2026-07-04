@@ -58,3 +58,19 @@ jobs:
       stage: finalize
       version: ${{ needs.prepare.outputs.version }}
       # asset-prefix: ndg  # must match the build job if overridden there
+
+  # Optionally publish to crates.io via Trusted Publishing (OIDC, no token secret).
+  # Requires a one-time Trusted Publisher config on crates.io for this repo +
+  # workflow file, created after an initial manual `cargo publish`. The
+  # id-token: write permission above is what lets this stage mint a token.
+  # XXX: Delete this job if the project doesn't publish to crates.io.
+  publish:
+    needs: [prepare, finalize]
+    if: ${{ needs.prepare.outputs.skip != 'true' && needs.finalize.result == 'success' }}
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    with:
+      stage: publish
+      version: ${{ needs.prepare.outputs.version }}
+      # publish-environment: release           # set if the Trusted Publisher uses one
+      # publish-command: cargo publish -p ndg  # e.g., a specific workspace member
+      # rust-toolchain: stable

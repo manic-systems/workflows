@@ -66,6 +66,17 @@ permissions:
   contents: write
 
 jobs:
+  validate-stage:
+    if: inputs.stage != 'prepare' && inputs.stage != 'finalize' && inputs.stage != 'publish'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject invalid stage
+        env:
+          STAGE: ${{ inputs.stage }}
+        run: |
+          echo "::error::stage must be prepare, finalize, or publish; got: $STAGE"
+          exit 1
+
   # ---- stage: prepare ----
   prepare:
     if: inputs.stage == 'prepare'
@@ -76,6 +87,8 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         name: Checkout
+        with:
+          persist-credentials: false
 
       - name: Install Nix
         if: inputs.install-nix
@@ -95,22 +108,14 @@ jobs:
       - name: Check if version changed
         id: check_version
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.read_version.outputs.version }}
-          BRANCH: ${{ inputs.default-branch }}
         run: |
           echo "Checking if version $VERSION has changed since last tag..."
 
-          if git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
+          if gh api "/repos/${REPOSITORY}/git/ref/tags/${VERSION}" >/dev/null 2>&1; then
             echo "Tag $VERSION already exists on remote."
-
-            LAST_TAG_ON_BRANCH=$(git describe --tags --abbrev=0 "origin/${BRANCH}" 2>/dev/null || echo "")
-            echo "Last tag on branch: $LAST_TAG_ON_BRANCH"
-
-            if [ "$LAST_TAG_ON_BRANCH" = "$VERSION" ]; then
-              echo "Version has not changed since last tag on ${BRANCH}. Exiting gracefully."
-            else
-              echo "Version differs from last tag on branch but tag exists on remote (likely a re-tag). Exiting gracefully."
-            fi
             echo "skip_workflow=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -121,18 +126,20 @@ jobs:
       - name: Tag
         if: steps.check_version.outputs.skip_workflow != 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.read_version.outputs.version }}
+          SHA: ${{ github.sha }}
         run: |
-          set -ex
+          gh api --method POST "/repos/${REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${VERSION}" \
+            -f "sha=${SHA}"
 
-          git tag "$VERSION"
-          git push origin "$VERSION"
-
-          git fetch --tags
-          if git ls-remote --tags origin | grep -q "refs/tags/${VERSION}$"; then
+          TAG_SHA=$(gh api "/repos/${REPOSITORY}/git/ref/tags/${VERSION}" --jq '.object.sha')
+          if [ "$TAG_SHA" = "$SHA" ]; then
             echo "Tag ${VERSION} successfully pushed to remote."
           else
-            echo "::error:: Tag ${VERSION} not found on remote after push." >&2
+            echo "::error:: Tag ${VERSION} does not point to ${SHA}." >&2
             exit 1
           fi
 

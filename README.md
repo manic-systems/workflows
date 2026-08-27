@@ -36,23 +36,23 @@ any cargo step is enabled.
 name: Build and Test with Cargo # rust-release.yml gates on this name
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+    push:
+        branches: [main]
+    pull_request:
 
 jobs:
-  checks:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-    uses: manic-systems/workflows/.github/workflows/rust-checks.yml@main
-    with:
-      os: ${{ matrix.os }}
-      # flake-check is on by default; opt in to cargo checks as needed:
-      # test: true
-      # clippy: true
-      # fmt: true
+    checks:
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        uses: manic-systems/workflows/.github/workflows/rust-checks.yml@main
+        with:
+            os: ${{ matrix.os }}
+            # flake-check is on by default; opt in to cargo checks as needed:
+            # test: true
+            # clippy: true
+            # fmt: true
 ```
 
 ### Inputs
@@ -120,48 +120,48 @@ single invocation — it can't straddle the caller's matrix). The caller wires
 name: Tag and Release
 
 on:
-  workflow_dispatch:
-  workflow_run:
-    workflows: [Build and Test with Cargo] # the CI workflow above
-    types: [completed]
-    branches: [main]
+    workflow_dispatch:
+    workflow_run:
+        workflows: [Build and Test with Cargo] # the CI workflow above
+        types: [completed]
+        branches: [main]
 
 permissions:
-  contents: write # create the release / push the tag
-  id-token: write # build provenance attestations
-  attestations: write # build provenance attestations
+    contents: write # create the release / push the tag
+    id-token: write # build provenance attestations
+    attestations: write # build provenance attestations
 
 jobs:
-  prepare:
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
-    with:
-      stage: prepare
+    prepare:
+        if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+        uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+        with:
+            stage: prepare
 
-  build:
-    needs: prepare
-    if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.skip != 'true' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, suffix: linux-amd64 }
-          - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
-          - { os: macos-latest, suffix: macos-arm64 }
-    uses: manic-systems/workflows/.github/workflows/rust-build.yml@main
-    with:
-      upload: true
-      version: ${{ needs.prepare.outputs.version }}
-      os: ${{ matrix.os }}
-      suffix: ${{ matrix.suffix }}
+    build:
+        needs: prepare
+        if: ${{ needs.prepare.result == 'success' && needs.prepare.outputs.skip != 'true' }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - { os: ubuntu-latest, suffix: linux-amd64 }
+                    - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
+                    - { os: macos-latest, suffix: macos-arm64 }
+        uses: manic-systems/workflows/.github/workflows/rust-build.yml@main
+        with:
+            upload: true
+            version: ${{ needs.prepare.outputs.version }}
+            os: ${{ matrix.os }}
+            suffix: ${{ matrix.suffix }}
 
-  finalize:
-    needs: [prepare, build]
-    if: ${{ needs.prepare.outputs.skip != 'true' && needs.build.result == 'success' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
-    with:
-      stage: finalize
-      version: ${{ needs.prepare.outputs.version }}
+    finalize:
+        needs: [prepare, build]
+        if: ${{ needs.prepare.outputs.skip != 'true' && needs.build.result == 'success' }}
+        uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+        with:
+            stage: finalize
+            version: ${{ needs.prepare.outputs.version }}
 ```
 
 See [`examples/`](examples/) for both caller files with overrides annotated. Pin
@@ -215,14 +215,14 @@ grant `id-token: write` (the example already does). Wire it after `finalize`:
 
 ```yaml
 publish:
-  needs: [prepare, finalize]
-  if: ${{ needs.prepare.outputs.skip != 'true' && needs.finalize.result == 'success' }}
-  uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
-  with:
-    stage: publish
-    version: ${{ needs.prepare.outputs.version }}
-    # publish-environment: release   # set if the Trusted Publisher config uses one
-    # publish-command: cargo publish -p my-crate   # e.g. a specific workspace member
+    needs: [prepare, finalize]
+    if: ${{ needs.prepare.outputs.skip != 'true' && needs.finalize.result == 'success' }}
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    with:
+        stage: publish
+        version: ${{ needs.prepare.outputs.version }}
+        # publish-environment: release   # set if the Trusted Publisher config uses one
+        # publish-command: cargo publish -p my-crate   # e.g. a specific workspace member
 ```
 
 ---
@@ -232,6 +232,8 @@ publish:
 - `build-command`, `version-command`, and the `*-command` inputs are run
   verbatim in the consuming repo's job. Treat them as trusted. Only set them
   from workflows you control.
+- `stage` is validated. A value other than `prepare`, `finalize`, or `publish`
+  fails rather than succeeding with every release job skipped.
 - Build provenance attestations are free for public repositories. Verify an
   asset with `gh attestation verify <file> --repo <owner>/<repo>`.
 - `cachix/install-nix-action` is pinned to a floating major tag (`@v31`) so

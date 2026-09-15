@@ -46,7 +46,7 @@ jobs:
             fail-fast: false
             matrix:
                 os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-        uses: manic-systems/workflows/.github/workflows/rust-checks.yml@main
+        uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v1
         with:
             os: ${{ matrix.os }}
             # flake-check is on by default; opt in to cargo checks as needed:
@@ -134,7 +134,7 @@ permissions:
 jobs:
     prepare:
         if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-        uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+        uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
         with:
             stage: prepare
 
@@ -148,7 +148,7 @@ jobs:
                     - { os: ubuntu-latest, suffix: linux-amd64 }
                     - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
                     - { os: macos-latest, suffix: macos-arm64 }
-        uses: manic-systems/workflows/.github/workflows/rust-build.yml@main
+        uses: manic-systems/workflows/.github/workflows/rust-build.yml@v1
         with:
             upload: true
             version: ${{ needs.prepare.outputs.version }}
@@ -158,14 +158,23 @@ jobs:
     finalize:
         needs: [prepare, build]
         if: ${{ needs.prepare.outputs.skip != 'true' && needs.build.result == 'success' }}
-        uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+        uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
         with:
             stage: finalize
             version: ${{ needs.prepare.outputs.version }}
 ```
 
 See [`examples/`](examples/) for both caller files with overrides annotated. Pin
-to a tag (e.g. `@v1`) once this repo is tagged for reproducible releases.
+to a tag: `@v1` tracks the latest stable release (updated on each release), or
+`@vX.Y.Z` for an exact version.
+
+## Releasing this repo
+
+Bump the [`VERSION`](VERSION) file (bare semver) and push to `main`. The
+`Self-release` workflow then tags `vX.Y.Z` and moves the floating `vX` tag to
+the release commit, creates the GitHub release, and marks pre-release versions
+(e.g. `1.2.0-rc.1`) as prerelease. Releases can also be triggered manually via
+`workflow_dispatch` at the current `VERSION`.
 
 ### Inputs
 
@@ -217,7 +226,7 @@ grant `id-token: write` (the example already does). Wire it after `finalize`:
 publish:
     needs: [prepare, finalize]
     if: ${{ needs.prepare.outputs.skip != 'true' && needs.finalize.result == 'success' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
     with:
         stage: publish
         version: ${{ needs.prepare.outputs.version }}

@@ -22,7 +22,7 @@ jobs:
   prepare:
     # Only release on a successful upstream run (or a manual dispatch).
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
     with:
       stage: prepare
       # version-command: "nix run nixpkgs#fq -- -r '.workspace.package.version' Cargo.toml"
@@ -40,7 +40,7 @@ jobs:
           - { os: ubuntu-latest, suffix: linux-amd64 }
           - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
           - { os: macos-latest, suffix: macos-arm64 }
-    uses: manic-systems/workflows/.github/workflows/rust-build.yml@main
+    uses: manic-systems/workflows/.github/workflows/rust-build.yml@v1
     with:
       upload: true
       version: ${{ needs.prepare.outputs.version }}
@@ -53,7 +53,7 @@ jobs:
   finalize:
     needs: [prepare, build]
     if: ${{ needs.prepare.outputs.skip != 'true' && needs.build.result == 'success' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
     with:
       stage: finalize
       version: ${{ needs.prepare.outputs.version }}
@@ -67,7 +67,7 @@ jobs:
   publish:
     needs: [prepare, finalize]
     if: ${{ needs.prepare.outputs.skip != 'true' && needs.finalize.result == 'success' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@main
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
     with:
       stage: publish
       version: ${{ needs.prepare.outputs.version }}

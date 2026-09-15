@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-    uses: manic-systems/workflows/.github/workflows/rust-checks.yml@main
+    uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v1
     with:
       os: ${{ matrix.os }}
       # flake-check is on by default; opt in to the cargo checks you want:

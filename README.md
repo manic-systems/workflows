@@ -113,7 +113,7 @@ caller's token. `upload: true` requires the caller to grant `contents` /
 
 The tag/create-release and notes/checksums bookkeeping, selected by a `stage`
 input and **invoked twice** around the build matrix (a reusable workflow is a
-single invocation — it can't straddle the caller's matrix). The caller wires
+single invocation, so it can't straddle the caller's matrix). The caller wires
 `prepare → build → finalize`:
 
 ```yaml

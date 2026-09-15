@@ -2,7 +2,7 @@
 #
 # Reuses rust-checks.yml as a CI matrix. `nix flake check` is on by default;
 # enable cargo test / clippy / fmt as needed. This is also the workflow the
-# release pipeline gates on — its `name:` must match `workflows:` in the
+# release pipeline gates on: its `name:` must match `workflows:` in the
 # release caller's workflow_run trigger.
 name: Build and Test with Cargo
 

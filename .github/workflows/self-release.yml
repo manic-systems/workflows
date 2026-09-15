@@ -1,0 +1,98 @@
+# Self-release for this repo. Bump `VERSION` and push to `main`; on dispatch,
+# releases at the current `VERSION` unconditionally (unless the tag exists).
+# Both the full `vX.Y.Z` tag and the floating `vX` major tag are set to the
+# release commit, and a GitHub release is created (marked prerelease when the
+# version has a pre-release suffix).
+name: Self-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::VERSION must be bare semver (X.Y.Z[-suffix]); got: $VERSION"
+            exit 1
+          fi
+          echo "full=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "major=v${VERSION%%.*}" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" =~ - ]]; then
+            echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Choose ref
+        id: ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          SHA=""
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # Only release when the VERSION bump commit (before) differs from
+            # the current value; skip if the tag already exists.
+            if gh api "/repos/${REPOSITORY}/git/ref/tags/${{ steps.version.outputs.full }}" >/dev/null 2>&1; then
+              echo "Tag ${{ steps.version.outputs.full }} already exists; skipping."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and release
+        if: steps.ref.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.full }}
+          MAJOR: ${{ steps.version.outputs.major }}
+          SHA: ${{ github.sha }}
+          FLAGS: ${{ steps.version.outputs.prerelease }}
+        run: |
+          for TAG in "$VERSION" "$MAJOR"; do
+            # List tags first: moving an existing major tag through the ref API
+            # 409s; peeling it first keeps this idempotent.
+            if gh api "/repos/${REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+              TAG_SHA=$(gh api "/repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')
+              if [ "$TAG_SHA" = "$SHA" ]; then
+                echo "Tag ${TAG} already points at ${SHA}."
+                continue
+              fi
+              gh api --method DELETE "/repos/${REPOSITORY}/git/ref/tags/${TAG}"
+            fi
+            gh api --method POST "/repos/${REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${TAG}" \
+              -f "sha=${SHA}"
+            GOT=$(gh api "/repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')
+            if [ "$GOT" != "$SHA" ]; then
+              echo "::error::Tag ${TAG} does not point at ${SHA}." >&2
+              exit 1
+            fi
+            echo "Tag ${TAG} set to ${SHA}."
+          done
+
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release ${VERSION} already exists."
+          else
+            gh release create "$VERSION" \
+              --title "Release ${VERSION}" \
+              --target "$SHA" \
+              --notes "Reusable workflows at ${VERSION}. Pin \`@${MAJOR}\` (or \`@${VERSION}\`)." \
+              $FLAGS
+          fi

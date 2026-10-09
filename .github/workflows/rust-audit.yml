@@ -1,0 +1,81 @@
+# Audit dependency advisories, licenses, bans and sources with cargo-deny.
+# Standalone projects use cargo-deny-action; Nix projects use their own dev shell.
+name: Rust Dependency Audit
+
+on:
+  workflow_call:
+    inputs:
+      rust-toolchain:
+        description: "Standalone mode: Rust version used by cargo-deny-action."
+        type: string
+        default: "stable"
+      manifest-path:
+        description: "Standalone mode: repository-relative Cargo.toml path."
+        type: string
+        default: "Cargo.toml"
+      arguments:
+        description: "Standalone mode: cargo-deny global arguments (before check)."
+        type: string
+        default: "--all-features"
+      command-arguments:
+        description: "Standalone mode: check arguments, e.g. advisories or bans licenses sources. Empty checks all categories."
+        type: string
+        default: ""
+      install-nix:
+        description: "Use Nix-backed auditing instead of cargo-deny-action, installing Nix first."
+        type: boolean
+        default: false
+      working-directory:
+        description: "Nix mode: directory containing the flake and audit configuration."
+        type: string
+        default: "."
+      policy-command:
+        description: "Nix mode: optional dependency-policy shell script run before the audit (e.g. a cargo-deny derivation)."
+        type: string
+        default: ""
+      audit-command:
+        description: "Nix mode: shell script that audits dependencies. Defaults to all cargo-deny checks with all features."
+        type: string
+        default: "nix develop --command cargo deny --all-features check"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    # cargo-deny-action uses an x86_64 Linux container; dependency audits run once.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Audit dependencies
+        if: ${{ !inputs.install-nix }}
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          rust-version: ${{ inputs.rust-toolchain }}
+          manifest-path: ${{ inputs.manifest-path }}
+          arguments: ${{ inputs.arguments }}
+          command: check
+          command-arguments: ${{ inputs.command-arguments }}
+
+      - name: Install Nix
+        if: inputs.install-nix
+        uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check dependency policy
+        if: inputs.install-nix && inputs.policy-command != ''
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          POLICY_COMMAND: ${{ inputs.policy-command }}
+        run: bash -euo pipefail -c "$POLICY_COMMAND"
+
+      - name: Audit dependencies with Nix
+        if: inputs.install-nix
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          AUDIT_COMMAND: ${{ inputs.audit-command }}
+        run: bash -euo pipefail -c "$AUDIT_COMMAND"

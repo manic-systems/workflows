@@ -43,6 +43,11 @@ on:
         type: string
         default: ""
 
+      setup-command:
+        description: "Shell script run before the cargo steps, with Nix available (e.g. to install tools from the repo flake)."
+        type: string
+        default: ""
+
       # Cargo opt-ins
       test:
         description: "Run cargo test."
@@ -75,7 +80,7 @@ jobs:
           persist-credentials: false
 
       - name: Install Nix
-        if: inputs.install-nix && inputs.flake-check
+        if: inputs.install-nix && (inputs.flake-check || inputs.setup-command != '')
         uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,6 +92,13 @@ jobs:
           toolchain: ${{ inputs.rust-toolchain }}
           components: clippy, rustfmt
           target: ${{ inputs.rust-targets }}
+
+      - name: Setup
+        if: inputs.setup-command != ''
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+        run: bash -euo pipefail -c "$SETUP_COMMAND"
 
       - name: cargo fmt
         if: inputs.fmt

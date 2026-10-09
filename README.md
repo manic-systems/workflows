@@ -68,6 +68,7 @@ jobs:
 | `flake-check-command` | `nix flake check`                                          | Command run when `flake-check` is true.                                                   |
 | `rust-toolchain`      | `stable`                                                   | Toolchain channel passed to `setup-rust-toolchain` (only when any cargo step is enabled). |
 | `rust-targets`        | _(empty)_                                                  | Comma-separated extra targets installed with the toolchain, e.g. `wasm32v1-none`.         |
+| `setup-command`       | _(empty)_                                                  | Shell script run before the cargo steps, with Nix available.                              |
 | `test`                | `false`                                                    | Run cargo test.                                                                           |
 | `test-command`        | `cargo test --all-features`                                |                                                                                           |
 | `clippy`              | `false`                                                    | Run cargo clippy with `-D warnings`.                                                      |

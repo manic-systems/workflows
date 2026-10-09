@@ -38,6 +38,11 @@ on:
         type: string
         default: "stable"
 
+      rust-targets:
+        description: "Comma-separated extra targets installed with the toolchain, e.g. wasm32v1-none."
+        type: string
+        default: ""
+
       # Cargo opt-ins
       test:
         description: "Run cargo test."
@@ -81,6 +86,7 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: clippy, rustfmt
+          target: ${{ inputs.rust-targets }}
 
       - name: cargo fmt
         if: inputs.fmt

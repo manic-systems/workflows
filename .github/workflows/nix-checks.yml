@@ -1,0 +1,82 @@
+# Language-neutral Nix checks and optional package builds on one runner.
+# The caller owns the platform matrix and chooses any named checks/build targets.
+name: Nix Checks
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: "Runner image, e.g. ubuntu-latest, ubuntu-24.04-arm, macos-latest."
+        type: string
+        default: "ubuntu-latest"
+      working-directory:
+        description: "Directory containing the flake; all command steps run here."
+        type: string
+        default: "."
+      install-nix:
+        description: "Install Nix before running commands. Disable for runners with Nix already installed."
+        type: boolean
+        default: true
+      extra-nix-config:
+        description: "Additional nix.conf settings passed to install-nix-action."
+        type: string
+        default: ""
+      setup-command:
+        description: "Optional shell script run before the checks and build, with Nix available."
+        type: string
+        default: ""
+      flake-check:
+        description: "Run the flake check."
+        type: boolean
+        default: true
+      flake-check-command:
+        description: "Shell script run when flake-check is enabled."
+        type: string
+        default: "nix flake check --print-build-logs"
+      build:
+        description: "Also build the flake's default package or a custom target."
+        type: boolean
+        default: false
+      build-command:
+        description: "Shell script run when build is enabled; can select a named package or check."
+        type: string
+        default: "nix build --print-build-logs"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        if: inputs.install-nix && (inputs.flake-check || inputs.build || inputs.setup-command != '')
+        uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: ${{ inputs.extra-nix-config }}
+
+      - name: Setup
+        if: inputs.setup-command != ''
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+        run: bash -euo pipefail -c "$SETUP_COMMAND"
+
+      - name: Check flake
+        if: inputs.flake-check
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          FLAKE_CHECK_COMMAND: ${{ inputs.flake-check-command }}
+        run: bash -euo pipefail -c "$FLAKE_CHECK_COMMAND"
+
+      - name: Build
+        if: inputs.build
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          BUILD_COMMAND: ${{ inputs.build-command }}
+        run: bash -euo pipefail -c "$BUILD_COMMAND"

@@ -1,0 +1,29 @@
+# Copy this into a consuming repo as .github/workflows/nix.yml.
+# The caller owns the matrix; each reusable invocation checks one platform.
+name: Nix Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v1
+    with:
+      os: ${{ matrix.os }}
+      build: true
+      # working-directory: nix
+      # flake-check-command: nix flake check --print-build-logs --no-build
+      # build-command: nix build .#my-package --print-build-logs --no-link
+      # extra-nix-config: |
+      #   allow-import-from-derivation = false

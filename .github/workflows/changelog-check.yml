@@ -1,0 +1,50 @@
+# Require a CHANGELOG update in a pull request, independently of project language.
+name: Changelog Check
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: "Runner image."
+        type: string
+        default: "ubuntu-latest"
+      changelog-path:
+        description: "Repository-relative path of the changelog that must be updated."
+        type: string
+        default: "CHANGELOG.md"
+      skip-label:
+        description: "Pull request label that exempts a change. Empty disables the exemption."
+        type: string
+        default: "skip-changelog"
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (inputs.skip-label == '' || !contains(github.event.pull_request.labels.*.name, inputs.skip-label))
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check changelog update
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHANGELOG_PATH: ${{ inputs.changelog-path }}
+        run: |
+          # Compare the PR's own changes, not changes made on the base branch.
+          CHANGES=$(git diff --name-only --diff-filter=AM \
+            "${BASE_SHA}...${HEAD_SHA}" -- ":(literal)${CHANGELOG_PATH}")
+          if [[ -z "$CHANGES" ]]; then
+            echo "::error::Pull request must add or modify ${CHANGELOG_PATH}."
+            exit 1
+          fi
+          echo "Changelog updated: ${CHANGELOG_PATH}"

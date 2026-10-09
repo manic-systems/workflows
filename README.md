@@ -1,3 +1,5 @@
+<!--markdownlint-disable MD024-->
+
 # workflows
 
 [manic-systems]: https://github.com/manic-systems
@@ -7,22 +9,219 @@ organization. This lets us reuse the same workflow code with optional parameters
 to fine-grain their behaviour.
 
 > [!NOTE]
-> Files are prefixed by language (`rust-…`) because GitHub doesn't allow
-> subdirectories under `.github/workflows/`. The namespace lives in the
-> filename. Future languages add their own prefix (`go-...`, `node-...`, etc.).
+> Language-specific files are prefixed by language (`rust-...`, `deno-...`)
+> because GitHub doesn't allow subdirectories under `.github/workflows/`.
+> Language-neutral checks use descriptive names such as `changelog-check.yml`.
 
 <!--markdownlint-disable MD013-->
 
-| Workflow           | Use it for                                                                                                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rust-checks.yml`  | CI: `nix flake check` by default, plus opt-in `cargo test`/`clippy`/`fmt`.                                                                                            |
-| `rust-build.yml`   | Build a target with Nix on one runner. Dual-use: pass `upload: true` to attest provenance and ship the binary as a release asset.                                     |
-| `rust-release.yml` | Release bookkeeping (tag + create release; release notes + `SHA256SUMS`; optional crates.io publish). Invoked once per `stage` around the caller-driven build matrix. |
+| Workflow              | Use it for                                                                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rust-checks.yml`     | CI: `nix flake check` by default, plus opt-in `cargo test`/`clippy`/`fmt`.                                                                                            |
+| `rust-build.yml`      | Build a target with Nix on one runner. Dual-use: pass `upload: true` to attest provenance and ship the binary as a release asset.                                     |
+| `rust-release.yml`    | Release bookkeeping (tag + create release; release notes + `SHA256SUMS`; optional crates.io publish). Invoked once per `stage` around the caller-driven build matrix. |
+| `deno-fmt.yml`        | Check Deno formatting of Markdown files without running language-specific CI.                                                                                         |
+| `changelog-check.yml` | Require pull requests to update their changelog, with a label-based exemption.                                                                                        |
+| `nix-checks.yml`      | Language-neutral Nix flake checks and optional package or named-check builds.                                                                                         |
+| `rust-audit.yml`      | Cargo dependency advisories, licenses, bans, and sources; standalone or Nix-backed.                                                                                   |
 
 <!--markdownlint-enable MD013-->
 
-The caller always owns the matrix in plain YAML as GitHub forbids array inputs
-to reusable workflows. Callers invoke these once per matrix leg.
+The caller owns any build or language-check matrix in plain YAML, as GitHub
+forbids array inputs to reusable workflows. Run documentation checks once,
+outside that matrix.
+
+---
+
+## Markdown formatting - `deno-fmt.yml`
+
+Runs `deno fmt --check '**/*.md'` in the caller's repository. The quoted glob
+includes root and nested Markdown files without checking standalone TypeScript,
+JSON, YAML, or other files. Deno can also format supported code fences inside
+Markdown. Formatting errors fail the job; files are never rewritten.
+
+The caller's `deno.json` / `deno.jsonc` formatting options and exclusions are
+honored. Set `working-directory` to check a documentation subtree. To fix
+formatting locally, run `deno fmt '**/*.md'` in that same directory. A directory
+with no matching files fails rather than silently passing.
+
+### Inputs
+
+<!--markdownlint-disable MD013-->
+
+| Input               | Default         | Description                                                          |
+| ------------------- | --------------- | -------------------------------------------------------------------- |
+| `os`                | `ubuntu-latest` | Runner image.                                                        |
+| `working-directory` | `.`             | Directory containing Markdown files and optional Deno configuration. |
+| `deno-version`      | `v2.x`          | Deno version or semver range passed to `setup-deno`.                 |
+
+<!--markdownlint-enable MD013-->
+
+## Changelog check - `changelog-check.yml`
+
+Requires a pull request to add or modify `CHANGELOG.md`. The check compares the
+PR head against its merge base with the PR base SHA, so unrelated changes on the
+target branch cannot satisfy it. Deleting or renaming the changelog away does
+not count. This enforces a file update, not a changelog schema or the contents
+of an entry.
+
+The job runs only on `pull_request` events and is skipped on pushes, dispatches,
+and merge-group events. A PR carrying `skip-changelog` is exempt by default; set
+`skip-label` to an empty string to disable exemptions. Callers should include
+`labeled` and `unlabeled` PR activity types so changing a label reruns the
+check. Both documentation checks need only `contents: read`, including for fork
+PRs; no secrets or write permissions are required. Do not use
+`pull_request_target`.
+
+### Inputs
+
+<!--markdownlint-disable MD013-->
+
+| Input            | Default          | Description                                         |
+| ---------------- | ---------------- | --------------------------------------------------- |
+| `os`             | `ubuntu-latest`  | Runner image.                                       |
+| `changelog-path` | `CHANGELOG.md`   | Repository-relative literal file path (not a glob). |
+| `skip-label`     | `skip-changelog` | Exemption label; empty disables the exemption.      |
+
+<!--markdownlint-enable MD013-->
+
+### Caller example
+
+```yaml
+name: Documentation Checks
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+    contents: read
+
+jobs:
+    markdown:
+        uses: manic-systems/workflows/.github/workflows/deno-fmt.yml@v1
+    changelog:
+        uses: manic-systems/workflows/.github/workflows/changelog-check.yml@v1
+        # with:
+        #   changelog-path: docs/CHANGELOG.md
+        #   skip-label: ""
+```
+
+These jobs belong outside the Rust OS matrix: each check needs only one runner.
+See [`examples/ci.yml`](examples/ci.yml) for a combined caller. New workflows
+become available at `@v1` after this repository's next release; use a commit SHA
+to try them before then.
+
+---
+
+## Nix checks - `nix-checks.yml`
+
+Runs `nix flake check --print-build-logs` by default, with an optional package
+build afterward. This is the language-neutral alternative to `rust-checks.yml`
+for repositories that need only Nix. Call it once per runner in the caller's
+platform matrix; see [`examples/nix.yml`](examples/nix.yml).
+
+All command steps run in `working-directory`. Commands are shell scripts, so
+quoting, pipelines, and compound commands work; errors fail the job. The Nix
+installer is Cachix's action, matching the existing Rust workflows. For a
+preconfigured runner, set `install-nix: false`; `extra-nix-config` applies only
+when installation is enabled. No Rust toolchain is installed.
+
+### Inputs
+
+<!--markdownlint-disable MD013-->
+
+| Input                 | Default                              | Description                                                       |
+| --------------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| `os`                  | `ubuntu-latest`                      | Runner image.                                                     |
+| `working-directory`   | `.`                                  | Directory containing the flake; used for every command step.      |
+| `install-nix`         | `true`                               | Install Nix before running commands.                              |
+| `extra-nix-config`    | _(empty)_                            | Additional settings passed to the installer's `extra_nix_config`. |
+| `setup-command`       | _(empty)_                            | Optional shell script run before checks and builds.               |
+| `flake-check`         | `true`                               | Run the flake-check command.                                      |
+| `flake-check-command` | `nix flake check --print-build-logs` | Flake-check shell script.                                         |
+| `build`               | `false`                              | Run a package or named-check build after the flake check.         |
+| `build-command`       | `nix build --print-build-logs`       | Build shell script.                                               |
+
+<!--markdownlint-enable MD013-->
+
+To run a named check (including a VM test) independently of the whole flake:
+
+```yaml
+jobs:
+    vm-test:
+        uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v1
+        with:
+            flake-check: false
+            build: true
+            build-command: nix build .#checks.x86_64-linux.eval --no-link -L
+```
+
+Keep check discovery, matrices, dependencies, caching, and KVM preparation in
+the caller. Select a runner that supports the check's requirements. A failing
+flake check prevents the subsequent build.
+
+## Dependency audit - `rust-audit.yml`
+
+Runs `cargo-deny` against the caller's Cargo dependency graph and policy.
+Provide the project's `Cargo.toml` and `deny.toml`; this workflow does not
+invent an organization-wide license or dependency policy. By default it checks
+all features and all four categories: advisories, licenses, bans, and sources.
+Violations or advisory-database fetch errors fail the job.
+
+The default standalone path uses SHA-pinned `EmbarkStudios/cargo-deny-action`
+v2.1.1 (cargo-deny 0.20.2) with stable Rust. Its Docker image is x86_64-only, so
+this workflow runs once on `ubuntu-latest`, outside the build matrix.
+`manifest-path` is relative to the repository root. Put the policy alongside
+that manifest, or select a custom policy with `arguments`, for example
+`--all-features --config policy/deny.toml`.
+
+Set `install-nix: true` to use the repository's dev shell instead of the Docker
+action. The dev shell must provide Cargo and cargo-deny. Both Nix command steps
+run in `working-directory`; standalone-only inputs do not affect these scripts.
+The default Nix audit runs all categories with all features. For a reproducible
+policy derivation followed by a fresh advisory audit, use:
+
+```yaml
+jobs:
+    audit:
+        uses: manic-systems/workflows/.github/workflows/rust-audit.yml@v1
+        with:
+            install-nix: true
+            policy-command: nix build .#checks.x86_64-linux.cargo-deny --no-link -L
+            audit-command: nix develop --command cargo deny check advisories
+```
+
+The optional policy command runs first; a failure prevents the advisory command
+from running. A cached policy derivation is not a substitute for fetching fresh
+advisories, so keep the second step when splitting checks this way.
+
+### Inputs
+
+<!--markdownlint-disable MD013-->
+
+| Input               | Default                                                 | Description                                                                    |
+| ------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `rust-toolchain`    | `stable`                                                | Standalone: Rust version installed inside the audit container.                 |
+| `manifest-path`     | `Cargo.toml`                                            | Standalone: repository-relative manifest path.                                 |
+| `arguments`         | `--all-features`                                        | Standalone: global cargo-deny arguments, before `check`.                       |
+| `command-arguments` | _(empty)_                                               | Standalone: check arguments; empty checks all categories.                      |
+| `install-nix`       | `false`                                                 | Select Nix-backed auditing and install Nix instead of using the Docker action. |
+| `working-directory` | `.`                                                     | Nix: directory containing the flake and audit configuration.                   |
+| `policy-command`    | _(empty)_                                               | Nix: optional dependency-policy shell script before the audit.                 |
+| `audit-command`     | `nix develop --command cargo deny --all-features check` | Nix: audit shell script.                                                       |
+
+<!--markdownlint-enable MD013-->
+
+Both new workflows require only `contents: read`; they do not publish artifacts
+or modify the repository. Command inputs are trusted caller-owned shell scripts,
+not PR-provided text. [`examples/ci.yml`](examples/ci.yml) includes a standalone
+audit alongside Rust checks. Callers own all triggers; consider a scheduled
+audit as well as PR/push checks, since advisories can appear without dependency
+changes. These workflows become available at `@v1` after the next release; pin a
+commit SHA to use them before then.
 
 ---
 
@@ -224,6 +423,8 @@ The publish job declares `id-token: write` itself, but a reusable workflow can't
 grant a permission the caller withheld. The caller's release workflow must also
 grant `id-token: write` (the example already does). Wire it after `finalize`:
 
+<!--markdownlint-disable MD013-->
+
 ```yaml
 publish:
     needs: [prepare, finalize]
@@ -236,7 +437,7 @@ publish:
         # publish-command: cargo publish -p my-crate   # e.g. a specific workspace member
 ```
 
----
+<!--markdownlint-enable MD013-->
 
 ## Notes
 

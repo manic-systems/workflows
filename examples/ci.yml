@@ -4,12 +4,18 @@
 # enable cargo test / clippy / fmt as needed. This is also the workflow the
 # release pipeline gates on: its `name:` must match `workflows:` in the
 # release caller's workflow_run trigger.
+# Markdown and changelog checks run once, outside the Rust matrix. Include label
+# events so adding/removing the changelog exemption reruns that check.
 name: Build and Test with Cargo
 
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
 
 jobs:
   checks:
@@ -24,3 +30,28 @@ jobs:
       # test: true
       # clippy: true
       # fmt: true
+
+  audit:
+    # Requires the consuming repo's Cargo.toml and deny.toml.
+    uses: manic-systems/workflows/.github/workflows/rust-audit.yml@v1
+    # with:
+    #   rust-toolchain: stable
+    #   manifest-path: Cargo.toml
+    #   arguments: --all-features
+    #   command-arguments: advisories  # empty checks all categories
+    # For Nix-backed policy + fresh advisories, use these inputs instead:
+    #   install-nix: true
+    #   policy-command: nix build .#checks.x86_64-linux.cargo-deny --no-link -L
+    #   audit-command: nix develop --command cargo deny check advisories
+
+  markdown:
+    uses: manic-systems/workflows/.github/workflows/deno-fmt.yml@v1
+    # with:
+    #   deno-version: v2.x
+    #   working-directory: docs
+
+  changelog:
+    uses: manic-systems/workflows/.github/workflows/changelog-check.yml@v1
+    # with:
+    #   changelog-path: CHANGELOG.md
+    #   skip-label: skip-changelog  # set to "" to require every PR to update it

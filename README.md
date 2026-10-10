@@ -338,7 +338,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+                os: [ubuntu-latest, ubuntu-26.04-arm, macos-latest]
         uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v2
         with:
             os: ${{ matrix.os }}
@@ -450,7 +450,7 @@ jobs:
             matrix:
                 include:
                     - { os: ubuntu-latest, suffix: linux-amd64 }
-                    - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
+                    - { os: ubuntu-26.04-arm, suffix: linux-arm64 }
                     - { os: macos-latest, suffix: macos-arm64 }
         uses: manic-systems/workflows/.github/workflows/rust-build.yml@v2
         with:
@@ -576,6 +576,6 @@ publish:
 - If you override `binary-name`/`asset-prefix`, set them on both `build` and
   `finalize` so the checksum step finds the right assets.
 - Builds are native per runner. There is no cross-compilation. `linux-arm64`
-  uses GitHub's native `ubuntu-24.04-arm` runner.
+  uses GitHub's native `ubuntu-26.04-arm` runner.
 - `finalize` only runs when every `build` leg succeeds (`fail-fast: false` lets
   the others finish, but a failed target blocks notes/checksums).

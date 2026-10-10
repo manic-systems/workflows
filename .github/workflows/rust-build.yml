@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       os:
-        description: "Runner image, e.g. ubuntu-latest, ubuntu-24.04-arm, macos-latest."
+        description: "Runner image, e.g. ubuntu-latest, ubuntu-26.04-arm, macos-latest."
         type: string
         required: true
       build-command:

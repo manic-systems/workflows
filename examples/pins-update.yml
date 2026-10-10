@@ -14,8 +14,5 @@ jobs:
     uses: manic-systems/workflows/.github/workflows/pins-update.yml@v2
     with:
       client-id: ${{ vars.MANIC_BOT_CLIENT_ID }}
-      # tack-arguments: --exclude nixpkgs
-      # flake-arguments: nixpkgs
-      # auto-merge: true
     secrets:
       private-key: ${{ secrets.MANIC_BOT_PRIVATE_KEY }}

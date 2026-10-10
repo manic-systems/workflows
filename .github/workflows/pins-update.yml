@@ -1,5 +1,5 @@
-# Bump tack pins and flake.lock inputs, then open or refresh a single pull
-# request from a GitHub App so the repo's CI runs on it.
+# Bump tack pins, and optionally flake.lock inputs, then open or refresh a single
+# pull request from a GitHub App so the repo's CI runs on it.
 name: Pins Update
 
 on:
@@ -22,9 +22,9 @@ on:
         type: string
         default: "github:manic-systems/tack"
       flake:
-        description: "Run nix flake update when flake.lock exists."
+        description: "Also run nix flake update when flake.lock exists. Dependabot's nix ecosystem covers public repos."
         type: boolean
-        default: true
+        default: false
       flake-arguments:
         description: "Extra nix flake update arguments, e.g. input names."
         type: string

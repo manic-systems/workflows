@@ -24,6 +24,7 @@ to fine-grain their behaviour.
 | `changelog-check.yml` | Require pull requests to update their changelog, with a label-based exemption.                                                                                        |
 | `nix-checks.yml`      | Language-neutral Nix flake checks and optional package or named-check builds.                                                                                         |
 | `rust-audit.yml`      | Cargo dependency advisories, licenses, bans, and sources; standalone or Nix-backed.                                                                                   |
+| `actions-lint.yml`    | Lint the caller's workflows with actionlint and shellcheck, and audit them with zizmor.                                                                               |
 
 <!--markdownlint-enable MD013-->
 
@@ -32,6 +33,21 @@ forbids array inputs to reusable workflows. Run documentation checks once,
 outside that matrix.
 
 ---
+
+## Actions lint - `actions-lint.yml`
+
+Runs actionlint, which also shellchecks every `run:` script, then points
+zizmor's online audits at the caller's `.github/`. Both are pulled fresh from
+nixpkgs-unstable on every run, so new audits start catching things the week they
+ship. zizmor still runs when actionlint fails, and its findings land as
+annotations right on the pull request. If it's too strict for a repo, loosen it
+with `zizmor-arguments`, e.g. `--min-severity medium`.
+
+```yaml
+jobs:
+    actions:
+        uses: manic-systems/workflows/.github/workflows/actions-lint.yml@v2
+```
 
 ## Markdown formatting - `deno-fmt.yml`
 

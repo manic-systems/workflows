@@ -1,0 +1,40 @@
+# Lint the caller's GitHub Actions workflows with actionlint, which also runs
+# shellcheck on `run:` scripts, and audit them for security issues with zizmor.
+name: Actions Lint
+
+on:
+  workflow_call:
+    inputs:
+      zizmor-arguments:
+        description: "Extra zizmor arguments, e.g. --min-severity medium or --persona pedantic."
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: actionlint
+        run: nix shell nixpkgs#actionlint nixpkgs#shellcheck --command actionlint
+
+      - name: zizmor
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIZMOR_ARGUMENTS: ${{ inputs.zizmor-arguments }}
+        run: |
+          read -ra args <<< "$ZIZMOR_ARGUMENTS"
+          nix run nixpkgs#zizmor -- --format github "${args[@]}" .

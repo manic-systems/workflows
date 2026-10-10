@@ -21,6 +21,27 @@ on:
         description: "Additional nix.conf settings passed to install-nix-action."
         type: string
         default: ""
+      cache:
+        description: "Restore the Nix store from the Actions cache, falling back to the default branch's entry."
+        type: boolean
+        default: false
+      cache-save:
+        description: "Also save the store and purge this ref's older entries. The caller must grant actions: write."
+        type: boolean
+        default: false
+      cache-key:
+        description: "Cache key prefix; jobs that should share a store use the same one. Defaults to nix-<repository name>."
+        type: string
+        default: ""
+      cache-hash-files:
+        description: "Newline-separated globs, relative to the repository root, whose contents key the cache."
+        type: string
+        default: |
+          **/*.nix
+          **/flake.lock
+          **/Cargo.toml
+          **/Cargo.lock
+          **/*.rs
       setup-command:
         description: "Optional shell script run before the checks and build, with Nix available."
         type: string
@@ -42,12 +63,12 @@ on:
         type: string
         default: "nix build --print-build-logs"
 
-permissions:
-  contents: read
-
 jobs:
   checks:
     runs-on: ${{ inputs.os }}
+    env:
+      CACHE_KEY: ${{ inputs.cache-key || format('nix-{0}', github.event.repository.name) }}
+      CACHE_SCOPE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'merge_group' && 'merge-queue' || github.ref_name }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -59,6 +80,24 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: ${{ inputs.extra-nix-config }}
+
+      # Entries are scoped per ref and each ref purges only its own, so a PR
+      # never deletes the default branch's entry that every other ref restores.
+      - name: Nix store cache
+        if: inputs.cache
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: ${{ env.CACHE_KEY }}-${{ runner.os }}-${{ runner.arch }}-${{ env.CACHE_SCOPE }}-${{ hashFiles(inputs.cache-hash-files) }}
+          restore-prefixes-first-match: |
+            ${{ env.CACHE_KEY }}-${{ runner.os }}-${{ runner.arch }}-${{ env.CACHE_SCOPE }}-
+            ${{ env.CACHE_KEY }}-${{ runner.os }}-${{ runner.arch }}-${{ github.event.repository.default_branch }}-
+          save: ${{ inputs.cache-save }}
+          gc-max-store-size: 8G
+          purge: ${{ inputs.cache-save }}
+          purge-prefixes: ${{ env.CACHE_KEY }}-${{ runner.os }}-${{ runner.arch }}-${{ env.CACHE_SCOPE }}-
+          purge-created: 0
+          purge-last-accessed: 0
+          purge-primary-key: never
 
       - name: Setup
         if: inputs.setup-command != ''

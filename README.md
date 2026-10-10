@@ -40,9 +40,11 @@ outside that matrix.
 Runs actionlint, which also shellchecks every `run:` script, then points
 zizmor's online audits at the caller's `.github/`. Both are pulled fresh from
 nixpkgs-unstable on every run, so new audits start catching things the week they
-ship. zizmor still runs when actionlint fails, and its findings land as
-annotations right on the pull request. If it's too strict for a repo, loosen it
-with `zizmor-arguments`, e.g. `--min-severity medium`.
+ship. On a push or PR that doesn't touch `.github/`, the job checks that and
+passes in a few seconds without installing anything, so it's safe to make a
+required check. zizmor still runs when actionlint fails, and its findings land
+as annotations right on the pull request. If it's too strict for a repo, loosen
+it with `zizmor-arguments`, e.g. `--min-severity medium`.
 
 ```yaml
 jobs:

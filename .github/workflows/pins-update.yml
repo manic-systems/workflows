@@ -1,0 +1,138 @@
+# Bump tack pins and flake.lock inputs, then open or refresh a single pull
+# request from a GitHub App so the repo's CI runs on it.
+name: Pins Update
+
+on:
+  workflow_call:
+    inputs:
+      client-id:
+        description: "Client ID of the GitHub App that pushes the branch and opens the pull request."
+        type: string
+        required: true
+      tack:
+        description: "Run tack update when .tack/pins.toml exists."
+        type: boolean
+        default: true
+      tack-arguments:
+        description: "Extra tack update arguments, e.g. pin names, groups, or --exclude."
+        type: string
+        default: ""
+      tack-flake:
+        description: "Flake reference tack runs from."
+        type: string
+        default: "github:manic-systems/tack"
+      flake:
+        description: "Run nix flake update when flake.lock exists."
+        type: boolean
+        default: true
+      flake-arguments:
+        description: "Extra nix flake update arguments, e.g. input names."
+        type: string
+        default: ""
+      branch:
+        description: "Branch the update is force-pushed to."
+        type: string
+        default: "pins-update"
+      auto-merge:
+        description: "Enable auto-merge on the pull request, so it lands once required checks pass."
+        type: boolean
+        default: false
+    secrets:
+      private-key:
+        description: "Private key of the GitHub App."
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Create app token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update pins
+        id: update
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_TACK: ${{ inputs.tack }}
+          TACK_FLAKE: ${{ inputs.tack-flake }}
+          TACK_ARGUMENTS: ${{ inputs.tack-arguments }}
+          RUN_FLAKE: ${{ inputs.flake }}
+          FLAKE_ARGUMENTS: ${{ inputs.flake-arguments }}
+        run: |
+          body="$RUNNER_TEMP/body.md"
+          fence='```'
+          : > "$body"
+
+          if [[ "$RUN_TACK" == true && -f .tack/pins.toml ]]; then
+            tack="$(nix build --no-link --print-out-paths "$TACK_FLAKE")/bin/tack"
+            read -ra args <<< "$TACK_ARGUMENTS"
+            "$tack" update "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/tack.log"
+            "$tack" verify --base HEAD
+            if ! git diff --quiet -- .tack; then
+              printf '### tack\n\n%s\n%s\n%s\n\n' "$fence" "$(cat "$RUNNER_TEMP/tack.log")" "$fence" >> "$body"
+            fi
+          fi
+
+          if [[ "$RUN_FLAKE" == true && -f flake.lock ]]; then
+            read -ra args <<< "$FLAKE_ARGUMENTS"
+            nix flake update "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/flake.log"
+            if ! git diff --quiet -- flake.lock; then
+              printf '### flake.lock\n\n%s\n%s\n%s\n' "$fence" "$(cat "$RUNNER_TEMP/flake.log")" "$fence" >> "$body"
+            fi
+          fi
+
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open pull request
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          BRANCH: ${{ inputs.branch }}
+          BASE: ${{ github.ref_name }}
+          AUTO_MERGE: ${{ inputs.auto-merge }}
+        run: |
+          user_id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+          git switch -C "$BRANCH"
+          git commit --all --message "pins: update"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git" "HEAD:refs/heads/${BRANCH}"
+
+          state=$(gh pr view "$BRANCH" --json state --jq .state 2>/dev/null || true)
+          if [[ "$state" == OPEN ]]; then
+            gh pr edit "$BRANCH" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --base "$BASE" --title "pins: update" --body-file "$RUNNER_TEMP/body.md"
+          fi
+
+          if [[ "$AUTO_MERGE" == true ]]; then
+            gh pr merge "$BRANCH" --auto --squash
+          fi

@@ -25,6 +25,7 @@ to fine-grain their behaviour.
 | `nix-checks.yml`      | Language-neutral Nix flake checks and optional package or named-check builds.                                                                                         |
 | `rust-audit.yml`      | Cargo dependency advisories, licenses, bans, and sources; standalone or Nix-backed.                                                                                   |
 | `actions-lint.yml`    | Lint the caller's workflows with actionlint and shellcheck, and audit them with zizmor.                                                                               |
+| `pins-update.yml`     | Weekly tack and `flake.lock` bumps in one pull request, opened by a GitHub App so CI runs on it.                                                                      |
 
 <!--markdownlint-enable MD013-->
 
@@ -48,6 +49,34 @@ jobs:
     actions:
         uses: manic-systems/workflows/.github/workflows/actions-lint.yml@v2
 ```
+
+## Pins update - `pins-update.yml`
+
+Bumps tack pins and `flake.lock` inputs, then rolls whatever moved into one
+`pins: update` PR that gets refreshed each week instead of piling up.
+
+PRs opened with `GITHUB_TOKEN` don't trigger CI, so this opens them as a GitHub
+App instead. It needs read and write on Contents and Pull requests, and its
+client ID and private key go in the org's `MANIC_BOT_CLIENT_ID` variable and
+`MANIC_BOT_PRIVATE_KEY` secret. Then just install it on whichever repos you want
+bumped and copy in [`examples/pins-update.yml`](examples/pins-update.yml).
+
+### Inputs
+
+<!--markdownlint-disable MD013-->
+
+| Input             | Default                     | Description                                                            |
+| ----------------- | --------------------------- | ---------------------------------------------------------------------- |
+| `client-id`       | _(required)_                | Client ID of the GitHub App.                                           |
+| `tack`            | `true`                      | Run `tack update` when `.tack/pins.toml` exists.                       |
+| `tack-arguments`  | _(empty)_                   | Extra `tack update` arguments, e.g. pin names, groups, or `--exclude`. |
+| `tack-flake`      | `github:manic-systems/tack` | Flake reference tack is built from.                                    |
+| `flake`           | `true`                      | Run `nix flake update` when `flake.lock` exists.                       |
+| `flake-arguments` | _(empty)_                   | Extra `nix flake update` arguments, e.g. input names.                  |
+| `branch`          | `pins-update`               | Branch the update is force-pushed to.                                  |
+| `auto-merge`      | `false`                     | Turn on auto-merge so the PR lands once required checks pass.          |
+
+<!--markdownlint-enable MD013-->
 
 ## Markdown formatting - `deno-fmt.yml`
 

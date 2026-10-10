@@ -79,7 +79,7 @@ jobs:
                 echo "::error::${VERSION} already points at ${TAG_SHA}. Bump VERSION instead of moving a published tag." >&2
                 exit 1
               fi
-              gh api --method DELETE "/repos/${REPOSITORY}/git/ref/tags/${TAG}"
+              gh api --method DELETE "/repos/${REPOSITORY}/git/refs/tags/${TAG}"
             fi
             gh api --method POST "/repos/${REPOSITORY}/git/refs" \
               -f "ref=refs/tags/${TAG}" \

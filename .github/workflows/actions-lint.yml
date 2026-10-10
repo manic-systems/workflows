@@ -56,9 +56,13 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
+      # actionlint 1.7.12 predates the ubuntu-26.04 runner images
+      # (rhysd/actionlint#743).
       - name: actionlint
         if: steps.changes.outputs.lint == 'true'
-        run: nix shell nixpkgs#actionlint nixpkgs#shellcheck --command actionlint
+        run: >-
+          nix shell nixpkgs#actionlint nixpkgs#shellcheck --command
+          actionlint -ignore 'label "ubuntu-26\.04(-arm)?" is unknown'
 
       - name: zizmor
         if: ${{ !cancelled() && steps.changes.outputs.lint == 'true' }}

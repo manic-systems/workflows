@@ -111,7 +111,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.read_version.outputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.sha }}
         run: |
+          # Under workflow_run, github.sha is the default branch's current head,
+          # not the commit the gating CI run tested.
+          if [[ "$EVENT_NAME" == workflow_run ]]; then
+            if [[ "$RUN_EVENT" != push ]]; then
+              echo "::notice::CI ran for a ${RUN_EVENT} event, not a push. Skipping."
+              echo "skip_workflow=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [[ "$TESTED_SHA" != "$SHA" ]]; then
+              echo "::notice::CI tested ${TESTED_SHA} but ${SHA} is now the head. Its own CI run will release."
+              echo "skip_workflow=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
           echo "Checking if version $VERSION has changed since last tag..."
 
           if gh api "/repos/${REPOSITORY}/git/ref/tags/${VERSION}" >/dev/null 2>&1; then

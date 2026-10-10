@@ -506,6 +506,10 @@ publish:
   quoting, pipelines, and `&&` chains behave as they would in a terminal. They
   run in the consuming repo's job. Treat them as trusted and only set them from
   workflows you control.
+- Under `workflow_run`, `prepare` only releases a commit that CI tested on a
+  push and that's still the branch head. CI runs for pull requests are skipped,
+  and so is a run that a newer push overtook. That newer commit's own CI run
+  handles the release.
 - `stage` is validated. A value other than `prepare`, `finalize`, or `publish`
   fails rather than succeeding with every release job skipped.
 - Build provenance attestations are free for public repositories. Verify an

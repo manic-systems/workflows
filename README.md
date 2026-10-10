@@ -514,8 +514,8 @@ publish:
   fails rather than succeeding with every release job skipped.
 - Build provenance attestations are free for public repositories. Verify an
   asset with `gh attestation verify <file> --repo <owner>/<repo>`.
-- `cachix/install-nix-action` is pinned to a floating major tag (`@v31`) so
-  consumers pinning this repo to `@v1` don't float on the action's `master`.
+- Every third-party action is pinned to the commit of a release tag, with that
+  exact tag in a trailing comment.
 - crates.io Trusted Publishing currently supports GitHub Actions only, and the
   publish job runs on `ubuntu-latest`. Publishing is host-independent.
 - If you override `binary-name`/`asset-prefix`, set them on both `build` and

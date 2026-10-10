@@ -117,18 +117,16 @@ permissions:
 
 jobs:
     markdown:
-        uses: manic-systems/workflows/.github/workflows/deno-fmt.yml@v1
+        uses: manic-systems/workflows/.github/workflows/deno-fmt.yml@v2
     changelog:
-        uses: manic-systems/workflows/.github/workflows/changelog-check.yml@v1
+        uses: manic-systems/workflows/.github/workflows/changelog-check.yml@v2
         # with:
         #   changelog-path: docs/CHANGELOG.md
         #   skip-label: ""
 ```
 
 These jobs belong outside the Rust OS matrix: each check needs only one runner.
-See [`examples/ci.yml`](examples/ci.yml) for a combined caller. New workflows
-become available at `@v1` after this repository's next release; use a commit SHA
-to try them before then.
+See [`examples/ci.yml`](examples/ci.yml) for a combined caller.
 
 ---
 
@@ -173,7 +171,7 @@ To run a named check (including a VM test) independently of the whole flake:
 ```yaml
 jobs:
     vm-test:
-        uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v1
+        uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v2
         with:
             flake-check: false
             build: true
@@ -252,7 +250,7 @@ policy derivation followed by a fresh advisory audit, use:
 ```yaml
 jobs:
     audit:
-        uses: manic-systems/workflows/.github/workflows/rust-audit.yml@v1
+        uses: manic-systems/workflows/.github/workflows/rust-audit.yml@v2
         with:
             install-nix: true
             policy-command: nix build .#checks.x86_64-linux.cargo-deny --no-link -L
@@ -285,8 +283,7 @@ or modify the repository. Command inputs are trusted caller-owned shell scripts,
 not PR-provided text. [`examples/ci.yml`](examples/ci.yml) includes a standalone
 audit alongside Rust checks. Callers own all triggers; consider a scheduled
 audit as well as PR/push checks, since advisories can appear without dependency
-changes. These workflows become available at `@v1` after the next release; pin a
-commit SHA to use them before then.
+changes.
 
 ---
 
@@ -400,7 +397,7 @@ name: Tag and Release
 on:
     workflow_dispatch:
     workflow_run:
-        workflows: [Build and Test with Cargo] # the CI workflow above
+        workflows: [CI] # the CI workflow above
         types: [completed]
         branches: [main]
 
@@ -412,7 +409,7 @@ permissions:
 jobs:
     prepare:
         if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-        uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
+        uses: manic-systems/workflows/.github/workflows/rust-release.yml@v2
         with:
             stage: prepare
 
@@ -426,7 +423,7 @@ jobs:
                     - { os: ubuntu-latest, suffix: linux-amd64 }
                     - { os: ubuntu-24.04-arm, suffix: linux-arm64 }
                     - { os: macos-latest, suffix: macos-arm64 }
-        uses: manic-systems/workflows/.github/workflows/rust-build.yml@v1
+        uses: manic-systems/workflows/.github/workflows/rust-build.yml@v2
         with:
             upload: true
             version: ${{ needs.prepare.outputs.version }}
@@ -436,7 +433,7 @@ jobs:
     finalize:
         needs: [prepare, build]
         if: ${{ needs.prepare.outputs.skip != 'true' && needs.build.result == 'success' }}
-        uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
+        uses: manic-systems/workflows/.github/workflows/rust-release.yml@v2
         with:
             stage: finalize
             version: ${{ needs.prepare.outputs.version }}
@@ -519,7 +516,7 @@ grant `id-token: write` (the example already does). Wire it after `finalize`:
 publish:
     needs: [prepare, finalize]
     if: ${{ needs.prepare.outputs.skip != 'true' && needs.finalize.result == 'success' }}
-    uses: manic-systems/workflows/.github/workflows/rust-release.yml@v1
+    uses: manic-systems/workflows/.github/workflows/rust-release.yml@v2
     with:
         stage: publish
         version: ${{ needs.prepare.outputs.version }}

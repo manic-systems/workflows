@@ -133,17 +133,21 @@ when installation is enabled. No Rust toolchain is installed.
 
 <!--markdownlint-disable MD013-->
 
-| Input                 | Default                              | Description                                                       |
-| --------------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| `os`                  | `ubuntu-latest`                      | Runner image.                                                     |
-| `working-directory`   | `.`                                  | Directory containing the flake; used for every command step.      |
-| `install-nix`         | `true`                               | Install Nix before running commands.                              |
-| `extra-nix-config`    | _(empty)_                            | Additional settings passed to the installer's `extra_nix_config`. |
-| `setup-command`       | _(empty)_                            | Optional shell script run before checks and builds.               |
-| `flake-check`         | `true`                               | Run the flake-check command.                                      |
-| `flake-check-command` | `nix flake check --print-build-logs` | Flake-check shell script.                                         |
-| `build`               | `false`                              | Run a package or named-check build after the flake check.         |
-| `build-command`       | `nix build --print-build-logs`       | Build shell script.                                               |
+| Input                 | Default                              | Description                                                              |
+| --------------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| `os`                  | `ubuntu-latest`                      | Runner image.                                                            |
+| `working-directory`   | `.`                                  | Directory containing the flake; used for every command step.             |
+| `install-nix`         | `true`                               | Install Nix before running commands.                                     |
+| `extra-nix-config`    | _(empty)_                            | Additional settings passed to the installer's `extra_nix_config`.        |
+| `cache`               | `false`                              | Restore the Nix store cache. See [Nix store cache](#nix-store-cache).    |
+| `cache-save`          | `false`                              | Also save it and purge this ref's older entries. Needs `actions: write`. |
+| `cache-key`           | `nix-<repo>`                         | Key prefix. Jobs that share a store use the same key.                    |
+| `cache-hash-files`    | Nix, Cargo and Rust sources          | Newline-separated globs, from the repo root, that key the cache.         |
+| `setup-command`       | _(empty)_                            | Optional shell script run before checks and builds.                      |
+| `flake-check`         | `true`                               | Run the flake-check command.                                             |
+| `flake-check-command` | `nix flake check --print-build-logs` | Flake-check shell script.                                                |
+| `build`               | `false`                              | Run a package or named-check build after the flake check.                |
+| `build-command`       | `nix build --print-build-logs`       | Build shell script.                                                      |
 
 <!--markdownlint-enable MD013-->
 
@@ -159,9 +163,53 @@ jobs:
             build-command: nix build .#checks.x86_64-linux.eval --no-link -L
 ```
 
-Keep check discovery, matrices, dependencies, caching, and KVM preparation in
-the caller. Select a runner that supports the check's requirements. A failing
-flake check prevents the subsequent build.
+The workflow doesn't discover checks, build matrices, or set up KVM, so wire
+those up in the caller and pick a runner that can actually run the check. If the
+flake check fails, the build never starts.
+
+## Nix store cache
+
+Flip on `cache` and `nix-checks.yml` or `rust-build.yml` will pick up
+`/nix/store` right where the last run left it, courtesy of
+`nix-community/cache-nix-action`. Entries are keyed on `cache-key`, the runner's
+OS and arch, the ref, and a hash of `cache-hash-files`, so bumping `Cargo.lock`
+gets you a fresh entry while a docs-only push reuses the old one. Every PR gets
+its own `pr-<number>` scope and the merge queue shares one. A job grabs the
+newest entry from its own scope, and when there's nothing there yet, it borrows
+the default branch's.
+
+Put `cache-save: true` on whichever job builds the most, usually the package
+build, and plain `cache: true` on the jobs downstream of it, like VM tests that
+`need` the build. The saving job trims the store to 8 GiB before uploading and
+purges older entries from its own scope, never anyone else's. Purging goes
+through the Actions cache API, so grant that job `actions: write`.
+
+```yaml
+jobs:
+    build:
+        permissions:
+            actions: write
+            contents: read
+        uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v2
+        with:
+            flake-check: false
+            build: true
+            build-command: nix build .#ncro -L --no-link
+            cache: true
+            cache-save: true
+
+    vm-test:
+        needs: build
+        uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v2
+        with:
+            flake-check: false
+            build: true
+            build-command: nix build .#checks.x86_64-linux.e2e -L --no-link
+            cache: true
+```
+
+Release builds never touch the cache, since `rust-build.yml` skips it whenever
+`upload: true`.
 
 ## Dependency audit - `rust-audit.yml`
 
@@ -303,6 +351,10 @@ caller's token. `upload: true` requires the caller to grant `contents` /
 | `working-directory` | `.`                              | Directory the build runs in; `artifact-path` is resolved relative to it. |
 | `build-command`     | `nix build`                      | Command that builds the project (flake default package by default).      |
 | `install-nix`       | `true`                           | Install Nix before building.                                             |
+| `cache`             | `false`                          | Restore the Nix store cache. See [Nix store cache](#nix-store-cache).    |
+| `cache-save`        | `false`                          | Also save it and purge this ref's older entries. Needs `actions: write`. |
+| `cache-key`         | `nix-<repo>`                     | Key prefix. Jobs that share a store use the same key.                    |
+| `cache-hash-files`  | Nix, Cargo and Rust sources      | Newline-separated globs, from the repo root, that key the cache.         |
 | `upload`            | `false`                          | Attest provenance and upload the binary to a release.                    |
 | `version`           | _(required when `upload: true`)_ | Release tag to upload to (pass `needs.prepare.outputs.version`).         |
 | `suffix`            | _(required when `upload: true`)_ | Asset suffix; the asset is `<asset-prefix>-<suffix>`.                    |

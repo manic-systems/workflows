@@ -102,7 +102,7 @@ jobs:
           VERSION_COMMAND: ${{ inputs.version-command }}
           TAG_PREFIX: ${{ inputs.tag-prefix }}
         run: |
-          RAW="$($VERSION_COMMAND)"
+          RAW="$(bash -euo pipefail -c "$VERSION_COMMAND")"
           echo "version=${TAG_PREFIX}${RAW}" >> "$GITHUB_OUTPUT"
 
       - name: Check if version changed
@@ -320,4 +320,4 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
           PUBLISH_COMMAND: ${{ inputs.publish-command }}
-        run: $PUBLISH_COMMAND
+        run: bash -euo pipefail -c "$PUBLISH_COMMAND"

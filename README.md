@@ -441,9 +441,10 @@ publish:
 
 ## Notes
 
-- `build-command`, `version-command`, and the `*-command` inputs are run
-  verbatim in the consuming repo's job. Treat them as trusted. Only set them
-  from workflows you control.
+- Every `*-command` input is a bash script run with `bash -euo pipefail -c`, so
+  quoting, pipelines, and `&&` chains behave as they would in a terminal. They
+  run in the consuming repo's job. Treat them as trusted and only set them from
+  workflows you control.
 - `stage` is validated. A value other than `prepare`, `finalize`, or `publish`
   fails rather than succeeding with every release job skipped.
 - Build provenance attestations are free for public repositories. Verify an

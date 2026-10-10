@@ -105,24 +105,24 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           FMT_COMMAND: ${{ inputs.fmt-command }}
-        run: $FMT_COMMAND
+        run: bash -euo pipefail -c "$FMT_COMMAND"
 
       - name: cargo clippy
         if: inputs.clippy
         working-directory: ${{ inputs.working-directory }}
         env:
           CLIPPY_COMMAND: ${{ inputs.clippy-command }}
-        run: $CLIPPY_COMMAND
+        run: bash -euo pipefail -c "$CLIPPY_COMMAND"
 
       - name: cargo test
         if: inputs.test
         working-directory: ${{ inputs.working-directory }}
         env:
           TEST_COMMAND: ${{ inputs.test-command }}
-        run: $TEST_COMMAND
+        run: bash -euo pipefail -c "$TEST_COMMAND"
 
       - name: nix flake check
         if: inputs.flake-check
         env:
           FLAKE_CHECK_COMMAND: ${{ inputs.flake-check-command }}
-        run: $FLAKE_CHECK_COMMAND
+        run: bash -euo pipefail -c "$FLAKE_CHECK_COMMAND"

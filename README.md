@@ -442,9 +442,21 @@ jobs:
             version: ${{ needs.prepare.outputs.version }}
 ```
 
-See [`examples/`](examples/) for both caller files with overrides annotated. Pin
-to a tag: `@v1` tracks the latest stable release (updated on each release), or
-`@vX.Y.Z` for an exact version.
+See [`examples/`](examples/) for the caller files with overrides annotated.
+
+## Pinning
+
+Pin this repository by commit and put the version in a trailing comment.
+
+```yaml
+uses: manic-systems/workflows/.github/workflows/rust-checks.yml@<sha> # v2.0.0
+```
+
+Then drop [`examples/dependabot.yml`](examples/dependabot.yml) into
+`.github/dependabot.yml`. Once a week Dependabot opens a single PR that bumps
+every pin along with its comment. Third-party actions sit out a 7-day cooldown
+first, while releases from this organization land on the next run. If you'd
+rather float, `@v2` works too.
 
 ## Releasing this repo
 

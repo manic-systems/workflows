@@ -1,0 +1,16 @@
+# Copy this into a consuming repo as .github/dependabot.yml. It bumps the SHA
+# pins of this repo and every other action together, once a week.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      exclude: [manic-systems/*]
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

@@ -13,6 +13,10 @@ on:
         description: "Directory containing the flake; all command steps run here."
         type: string
         default: "."
+      timeout-minutes:
+        description: "Job timeout. GitHub's own default is 360."
+        type: number
+        default: 60
       install-nix:
         description: "Install Nix before running commands. Disable for runners with Nix already installed."
         type: boolean
@@ -66,6 +70,7 @@ on:
 jobs:
   checks:
     runs-on: ${{ inputs.os }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
       CACHE_KEY: ${{ inputs.cache-key || format('nix-{0}', github.event.repository.name) }}
       CACHE_SCOPE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'merge_group' && 'merge-queue' || github.ref_name }}

@@ -84,7 +84,9 @@ jobs:
         uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          extra_nix_config: ${{ inputs.extra-nix-config }}
+          extra_nix_config: |
+            ${{ inputs.extra-nix-config }}
+            extra-experimental-features = nix-command flakes
 
       # Entries are scoped per ref and each ref purges only its own, so a PR
       # never deletes the default branch's entry that every other ref restores.

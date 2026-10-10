@@ -24,6 +24,14 @@ on:
         description: "Install Nix (needed by `nix flake check` and the dev shell)."
         type: boolean
         default: true
+      timeout-minutes:
+        description: "Job timeout. GitHub's own default is 360."
+        type: number
+        default: 60
+      extra-nix-config:
+        description: "Additional nix.conf settings passed to install-nix-action."
+        type: string
+        default: ""
       flake-check:
         description: "Run the flake-check command."
         type: boolean
@@ -77,6 +85,7 @@ permissions:
 jobs:
   checks:
     runs-on: ${{ inputs.os }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     env:
       DEV_SHELL: ${{ inputs.rust-toolchain == '' }}
     steps:
@@ -91,6 +100,7 @@ jobs:
         uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: ${{ inputs.extra-nix-config }}
 
       - name: Set up Rust
         if: inputs.rust-toolchain != '' && (inputs.test || inputs.clippy || inputs.fmt)

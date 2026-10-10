@@ -138,6 +138,7 @@ when installation is enabled. No Rust toolchain is installed.
 | `os`                  | `ubuntu-latest`                      | Runner image.                                                            |
 | `working-directory`   | `.`                                  | Directory containing the flake; used for every command step.             |
 | `install-nix`         | `true`                               | Install Nix before running commands.                                     |
+| `timeout-minutes`     | `60`                                 | Job timeout in minutes.                                                  |
 | `extra-nix-config`    | _(empty)_                            | Additional settings passed to the installer's `extra_nix_config`.        |
 | `cache`               | `false`                              | Restore the Nix store cache. See [Nix store cache](#nix-store-cache).    |
 | `cache-save`          | `false`                              | Also save it and purge this ref's older entries. Needs `actions: write`. |
@@ -315,6 +316,8 @@ jobs:
 | `os`                  | _(required)_                                                           | Runner image.                                                                 |
 | `working-directory`   | `.`                                                                    | Directory the cargo steps run in (the flake check stays at the repo root).    |
 | `install-nix`         | `true`                                                                 | Install Nix (needed by `nix flake check` and the dev shell).                  |
+| `timeout-minutes`     | `60`                                                                   | Job timeout in minutes.                                                       |
+| `extra-nix-config`    | _(empty)_                                                              | Additional settings passed to the installer's `extra_nix_config`.             |
 | `flake-check`         | `true`                                                                 | Run the flake-check command.                                                  |
 | `flake-check-command` | `nix flake check --print-build-logs`                                   | Shell script run when `flake-check` is true.                                  |
 | `rust-toolchain`      | _(empty)_                                                              | Empty uses the dev shell. A channel such as `stable` installs it with rustup. |
@@ -351,6 +354,8 @@ caller's token. `upload: true` requires the caller to grant `contents` /
 | `working-directory` | `.`                              | Directory the build runs in; `artifact-path` is resolved relative to it. |
 | `build-command`     | `nix build`                      | Command that builds the project (flake default package by default).      |
 | `install-nix`       | `true`                           | Install Nix before building.                                             |
+| `timeout-minutes`   | `60`                             | Job timeout in minutes.                                                  |
+| `extra-nix-config`  | _(empty)_                        | Additional settings passed to the installer's `extra_nix_config`.        |
 | `cache`             | `false`                          | Restore the Nix store cache. See [Nix store cache](#nix-store-cache).    |
 | `cache-save`        | `false`                          | Also save it and purge this ref's older entries. Needs `actions: write`. |
 | `cache-key`         | `nix-<repo>`                     | Key prefix. Jobs that share a store use the same key.                    |

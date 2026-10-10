@@ -69,7 +69,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           BUILD_COMMAND: ${{ inputs.build-command }}
-        run: $BUILD_COMMAND
+        run: bash -euo pipefail -c "$BUILD_COMMAND"
 
       - name: Prepare binary
         if: inputs.upload

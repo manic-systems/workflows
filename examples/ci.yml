@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        os: [ubuntu-latest, ubuntu-26.04-arm, macos-latest]
     uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v2
     with:
       os: ${{ matrix.os }}
@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        os: [ubuntu-latest, ubuntu-26.04-arm, macos-latest]
     permissions:
       actions: write # purge this ref's stale cache entries
       contents: read

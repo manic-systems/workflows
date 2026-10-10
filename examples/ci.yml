@@ -1,21 +1,21 @@
-# Copy this into a consuming repo as .github/workflows/ci.yml.
-#
-# Reuses rust-checks.yml as a CI matrix. `nix flake check` is on by default;
-# enable cargo test / clippy / fmt as needed. This is also the workflow the
-# release pipeline gates on: its `name:` must match `workflows:` in the
-# release caller's workflow_run trigger.
-# Markdown and changelog checks run once, outside the Rust matrix. Include label
-# events so adding/removing the changelog exemption reruns that check.
-name: Build and Test with Cargo
+# Copy this into a consuming repo as .github/workflows/ci.yml and delete the
+# jobs it does not need. release.yml gates on this workflow's `name:`.
+name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   checks:
@@ -23,35 +23,70 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-    uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v1
+    uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v2
     with:
       os: ${{ matrix.os }}
-      # flake-check is on by default; opt in to the cargo checks you want:
-      # test: true
-      # clippy: true
-      # fmt: true
+      flake-check: false
+      fmt: ${{ matrix.os == 'ubuntu-latest' }}
+      clippy: true
+      test: true
+      # test-command: cargo nextest run --workspace --all-features
+      # rust-toolchain: stable  # only for repos without a flake dev shell
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    permissions:
+      actions: write # purge this ref's stale cache entries
+      contents: read
+    uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v2
+    with:
+      os: ${{ matrix.os }}
+      flake-check: false
+      build: true
+      cache: true
+      cache-save: true
+      # build-command: nix build .#my-package --print-build-logs --no-link
+
+  vm-test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [e2e]
+    uses: manic-systems/workflows/.github/workflows/nix-checks.yml@v2
+    with:
+      flake-check: false
+      build: true
+      build-command: nix build .#checks.x86_64-linux.${{ matrix.check }} --print-build-logs --no-link
+      cache: true
 
   audit:
     # Requires the consuming repo's Cargo.toml and deny.toml.
-    uses: manic-systems/workflows/.github/workflows/rust-audit.yml@v1
-    # with:
+    uses: manic-systems/workflows/.github/workflows/rust-audit.yml@v2
+    with:
+      install-nix: true
+    #   policy-command: nix build .#checks.x86_64-linux.cargo-deny --no-link -L
+    #   audit-command: nix develop --command cargo deny check advisories
+    # Without Nix, drop install-nix and use cargo-deny-action instead:
     #   rust-toolchain: stable
     #   manifest-path: Cargo.toml
     #   arguments: --all-features
     #   command-arguments: advisories  # empty checks all categories
-    # For Nix-backed policy + fresh advisories, use these inputs instead:
-    #   install-nix: true
-    #   policy-command: nix build .#checks.x86_64-linux.cargo-deny --no-link -L
-    #   audit-command: nix develop --command cargo deny check advisories
+
+  actions:
+    uses: manic-systems/workflows/.github/workflows/actions-lint.yml@v2
 
   markdown:
-    uses: manic-systems/workflows/.github/workflows/deno-fmt.yml@v1
+    uses: manic-systems/workflows/.github/workflows/deno-fmt.yml@v2
     # with:
     #   deno-version: v2.x
     #   working-directory: docs
 
   changelog:
-    uses: manic-systems/workflows/.github/workflows/changelog-check.yml@v1
+    uses: manic-systems/workflows/.github/workflows/changelog-check.yml@v2
     # with:
     #   changelog-path: CHANGELOG.md
     #   skip-label: skip-changelog  # set to "" to require every PR to update it

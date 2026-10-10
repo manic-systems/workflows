@@ -31,7 +31,7 @@ on:
         type: string
         default: "main"
       install-nix:
-        description: "prepare: install Nix before reading the version."
+        description: "prepare/publish: install Nix before reading the version or publishing, e.g. for a publish-command that runs in the dev shell."
         type: boolean
         default: true
       asset-prefix:
@@ -329,6 +329,12 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ inputs.rust-toolchain }}
+
+      - name: Install Nix
+        if: inputs.install-nix
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Authenticate with crates.io
         id: auth

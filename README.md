@@ -510,7 +510,7 @@ moves, so if a release needs fixing, bump `VERSION` again.
 | `version-command`           | prepare          | `nix run nixpkgs#fq -- -r '.workspace.package.version' Cargo.toml` | Command printing the bare version (no tag prefix) to stdout.                                     |
 | `tag-prefix`                | prepare          | `v`                                                                | Prepended to the version to form the git tag.                                                    |
 | `default-branch`            | prepare          | `main`                                                             | Branch used to detect whether the version changed.                                               |
-| `install-nix`               | prepare          | `true`                                                             | Install Nix before reading the version.                                                          |
+| `install-nix`               | prepare/publish  | `true`                                                             | Install Nix before reading the version or publishing.                                            |
 | `asset-prefix`              | finalize         | repository name                                                    | Prefix of the assets to checksum. Must match what `build` used.                                  |
 | `publish-command`           | publish          | `cargo publish`                                                    | Command that publishes to crates.io (`CARGO_REGISTRY_TOKEN` is injected).                        |
 | `publish-working-directory` | publish          | `.`                                                                | Directory the publish command runs in.                                                           |
@@ -557,6 +557,7 @@ publish:
         version: ${{ needs.prepare.outputs.version }}
         # publish-environment: release   # set if the Trusted Publisher config uses one
         # publish-command: cargo publish -p my-crate   # e.g. a specific workspace member
+        # publish-command: nix develop --command cargo publish --workspace  # crates that need the dev shell
 ```
 
 <!--markdownlint-enable MD013-->

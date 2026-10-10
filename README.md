@@ -25,7 +25,7 @@ to fine-grain their behaviour.
 | `nix-checks.yml`      | Language-neutral Nix flake checks and optional package or named-check builds.                                                                                         |
 | `rust-audit.yml`      | Cargo dependency advisories, licenses, bans, and sources; standalone or Nix-backed.                                                                                   |
 | `actions-lint.yml`    | Lint the caller's workflows with actionlint and shellcheck, and audit them with zizmor.                                                                               |
-| `pins-update.yml`     | Weekly tack and `flake.lock` bumps in one pull request, opened by a GitHub App so CI runs on it.                                                                      |
+| `pins-update.yml`     | Weekly tack pin bumps in one pull request, opened by a GitHub App so CI runs on it.                                                                                   |
 
 <!--markdownlint-enable MD013-->
 
@@ -54,8 +54,12 @@ jobs:
 
 ## Pins update - `pins-update.yml`
 
-Bumps tack pins and `flake.lock` inputs, then rolls whatever moved into one
-`pins: update` PR that gets refreshed each week instead of piling up.
+Bumps your tack pins once a week and rolls everything that moved into a single
+`pins: update` PR, which just gets refreshed if nobody merges it. It leaves
+`flake.lock` alone, since the `nix` entry in
+[`examples/dependabot.yml`](examples/dependabot.yml) already has Dependabot
+handling that. Dependabot can't touch Nix in private repos though, so set
+`flake: true` there and this'll bump the lockfile too.
 
 PRs opened with `GITHUB_TOKEN` don't trigger CI, so this opens them as a GitHub
 App instead. It needs read and write on Contents and Pull requests, and its
@@ -73,7 +77,7 @@ bumped and copy in [`examples/pins-update.yml`](examples/pins-update.yml).
 | `tack`            | `true`                      | Run `tack update` when `.tack/pins.toml` exists.                       |
 | `tack-arguments`  | _(empty)_                   | Extra `tack update` arguments, e.g. pin names, groups, or `--exclude`. |
 | `tack-flake`      | `github:manic-systems/tack` | Flake reference tack is built from.                                    |
-| `flake`           | `true`                      | Run `nix flake update` when `flake.lock` exists.                       |
+| `flake`           | `false`                     | Also run `nix flake update` when `flake.lock` exists.                  |
 | `flake-arguments` | _(empty)_                   | Extra `nix flake update` arguments, e.g. input names.                  |
 | `branch`          | `pins-update`               | Branch the update is force-pushed to.                                  |
 | `auto-merge`      | `false`                     | Turn on auto-merge so the PR lands once required checks pass.          |

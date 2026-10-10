@@ -228,11 +228,14 @@ commit SHA to use them before then.
 ## Check - `rust-checks.yml`
 
 Runs `nix flake check` by default; toggle `test` / `clippy` / `fmt` for repos
-that want additional cargo-driven checks. Rust toolchain is installed only when
-any cargo step is enabled.
+that want additional cargo-driven checks. Cargo steps run inside the flake's dev
+shell via `nix develop --command`, so CI gets whatever the shell ships, whether
+that's nextest, taplo, or a pinned nightly. No dev shell? Set `rust-toolchain`
+and the workflow installs that channel with rustup instead. A failing step
+doesn't stop the rest, so fmt, clippy, and test all report on every run.
 
 ```yaml
-name: Build and Test with Cargo # rust-release.yml gates on this name
+name: CI # rust-release.yml gates on this name
 
 on:
     push:
@@ -245,11 +248,12 @@ jobs:
             fail-fast: false
             matrix:
                 os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
-        uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v1
+        uses: manic-systems/workflows/.github/workflows/rust-checks.yml@v2
         with:
             os: ${{ matrix.os }}
             # flake-check is on by default; opt in to cargo checks as needed:
             # test: true
+            # test-command: cargo nextest run --workspace --all-features
             # clippy: true
             # fmt: true
 ```
@@ -258,22 +262,22 @@ jobs:
 
 <!--markdownlint-disable MD013-->
 
-| Input                 | Default                                                    | Description                                                                               |
-| --------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `os`                  | _(required)_                                               | Runner image.                                                                             |
-| `working-directory`   | `.`                                                        | Directory the cargo steps run in (the flake check stays at the repo root).                |
-| `install-nix`         | `true`                                                     | Install Nix (needed by `nix flake check`).                                                |
-| `flake-check`         | `true`                                                     | Run the flake-check command.                                                              |
-| `flake-check-command` | `nix flake check`                                          | Command run when `flake-check` is true.                                                   |
-| `rust-toolchain`      | `stable`                                                   | Toolchain channel passed to `setup-rust-toolchain` (only when any cargo step is enabled). |
-| `rust-targets`        | _(empty)_                                                  | Comma-separated extra targets installed with the toolchain, e.g. `wasm32v1-none`.         |
-| `setup-command`       | _(empty)_                                                  | Shell script run before the cargo steps, with Nix available.                              |
-| `test`                | `false`                                                    | Run cargo test.                                                                           |
-| `test-command`        | `cargo test --all-features`                                |                                                                                           |
-| `clippy`              | `false`                                                    | Run cargo clippy with `-D warnings`.                                                      |
-| `clippy-command`      | `cargo clippy --all-targets --all-features -- -D warnings` |                                                                                           |
-| `fmt`                 | `false`                                                    | Run cargo fmt --check.                                                                    |
-| `fmt-command`         | `cargo fmt --all -- --check`                               |                                                                                           |
+| Input                 | Default                                                                | Description                                                                   |
+| --------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `os`                  | _(required)_                                                           | Runner image.                                                                 |
+| `working-directory`   | `.`                                                                    | Directory the cargo steps run in (the flake check stays at the repo root).    |
+| `install-nix`         | `true`                                                                 | Install Nix (needed by `nix flake check` and the dev shell).                  |
+| `flake-check`         | `true`                                                                 | Run the flake-check command.                                                  |
+| `flake-check-command` | `nix flake check --print-build-logs`                                   | Shell script run when `flake-check` is true.                                  |
+| `rust-toolchain`      | _(empty)_                                                              | Empty uses the dev shell. A channel such as `stable` installs it with rustup. |
+| `rust-targets`        | _(empty)_                                                              | Comma-separated extra rustup targets, e.g. `wasm32v1-none`.                   |
+| `setup-command`       | _(empty)_                                                              | Shell script run before the cargo steps, with Nix available.                  |
+| `test`                | `false`                                                                | Run the test command.                                                         |
+| `test-command`        | `cargo test --workspace --all-features`                                |                                                                               |
+| `clippy`              | `false`                                                                | Run the clippy command.                                                       |
+| `clippy-command`      | `cargo clippy --workspace --all-targets --all-features -- -D warnings` |                                                                               |
+| `fmt`                 | `false`                                                                | Run the fmt command.                                                          |
+| `fmt-command`         | `cargo fmt --all --check`                                              |                                                                               |
 
 <!--markdownlint-enable MD013-->
 

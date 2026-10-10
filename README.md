@@ -452,7 +452,8 @@ Bump the [`VERSION`](VERSION) file (bare semver) and push to `main`. The
 `Self-release` workflow then tags `vX.Y.Z` and moves the floating `vX` tag to
 the release commit, creates the GitHub release, and marks pre-release versions
 (e.g. `1.2.0-rc.1`) as prerelease. Releases can also be triggered manually via
-`workflow_dispatch` at the current `VERSION`.
+`workflow_dispatch` at the current `VERSION`. A published `vX.Y.Z` tag never
+moves, so if a release needs fixing, bump `VERSION` again.
 
 ### Inputs
 

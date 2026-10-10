@@ -4,6 +4,7 @@
 # consuming repo's CI workflow.
 #
 # All steps are toggleable. The defaults: flake-check ON; cargo steps OFF.
+# Cargo steps run inside the flake's dev shell unless rust-toolchain is set.
 name: Rust Checks
 
 on:
@@ -20,7 +21,7 @@ on:
 
       # Nix
       install-nix:
-        description: "Install Nix (needed by `nix flake check`)."
+        description: "Install Nix (needed by `nix flake check` and the dev shell)."
         type: boolean
         default: true
       flake-check:
@@ -28,18 +29,17 @@ on:
         type: boolean
         default: true
       flake-check-command:
-        description: "Command run when flake-check is true."
+        description: "Shell script run when flake-check is true."
         type: string
-        default: "nix flake check"
+        default: "nix flake check --print-build-logs"
 
-      # Rust toolchain (only installed when any cargo step is enabled)
+      # Rust toolchain
       rust-toolchain:
-        description: "Rust toolchain channel passed to setup-rust-toolchain."
+        description: "Empty runs cargo steps in the flake's dev shell. Set a channel (stable, nightly, 1.85) to install it with rustup instead, for repos without a dev shell."
         type: string
-        default: "stable"
-
+        default: ""
       rust-targets:
-        description: "Comma-separated extra targets installed with the toolchain, e.g. wasm32v1-none."
+        description: "Comma-separated extra targets installed with a rustup toolchain, e.g. wasm32v1-none. Dev-shell repos declare targets in the flake."
         type: string
         default: ""
 
@@ -50,48 +50,58 @@ on:
 
       # Cargo opt-ins
       test:
-        description: "Run cargo test."
+        description: "Run the test command."
         type: boolean
         default: false
       test-command:
         type: string
-        default: "cargo test --all-features"
+        default: "cargo test --workspace --all-features"
       clippy:
-        description: "Run cargo clippy with -D warnings."
+        description: "Run the clippy command."
         type: boolean
         default: false
       clippy-command:
         type: string
-        default: "cargo clippy --all-targets --all-features -- -D warnings"
+        default: "cargo clippy --workspace --all-targets --all-features -- -D warnings"
       fmt:
-        description: "Run cargo fmt --check."
+        description: "Run the fmt command."
         type: boolean
         default: false
       fmt-command:
         type: string
-        default: "cargo fmt --all -- --check"
+        default: "cargo fmt --all --check"
+
+permissions:
+  contents: read
 
 jobs:
   checks:
     runs-on: ${{ inputs.os }}
+    env:
+      DEV_SHELL: ${{ inputs.rust-toolchain == '' }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
 
       - name: Install Nix
-        if: inputs.install-nix && (inputs.flake-check || inputs.setup-command != '')
+        if: >-
+          inputs.install-nix && (inputs.flake-check || inputs.setup-command != '' ||
+          (inputs.rust-toolchain == '' && (inputs.test || inputs.clippy || inputs.fmt)))
         uses: cachix/install-nix-action@b97f05dcb019ddea06450a50ef6203d2fdc19fee # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Rust
-        if: inputs.test || inputs.clippy || inputs.fmt
+        if: inputs.rust-toolchain != '' && (inputs.test || inputs.clippy || inputs.fmt)
         uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
           toolchain: ${{ inputs.rust-toolchain }}
           components: clippy, rustfmt
           target: ${{ inputs.rust-targets }}
+          # The action defaults RUSTFLAGS to "-D warnings", which replaces the
+          # repo's build.rustflags from .cargo/config.toml.
+          rustflags: ""
 
       - name: Setup
         if: inputs.setup-command != ''
@@ -101,28 +111,43 @@ jobs:
         run: bash -euo pipefail -c "$SETUP_COMMAND"
 
       - name: cargo fmt
-        if: inputs.fmt
+        if: ${{ !cancelled() && inputs.fmt }}
         working-directory: ${{ inputs.working-directory }}
         env:
           FMT_COMMAND: ${{ inputs.fmt-command }}
-        run: bash -euo pipefail -c "$FMT_COMMAND"
+        run: |
+          if [[ "$DEV_SHELL" == true ]]; then
+            nix develop --command bash -euo pipefail -c "$FMT_COMMAND"
+          else
+            bash -euo pipefail -c "$FMT_COMMAND"
+          fi
 
       - name: cargo clippy
-        if: inputs.clippy
+        if: ${{ !cancelled() && inputs.clippy }}
         working-directory: ${{ inputs.working-directory }}
         env:
           CLIPPY_COMMAND: ${{ inputs.clippy-command }}
-        run: bash -euo pipefail -c "$CLIPPY_COMMAND"
+        run: |
+          if [[ "$DEV_SHELL" == true ]]; then
+            nix develop --command bash -euo pipefail -c "$CLIPPY_COMMAND"
+          else
+            bash -euo pipefail -c "$CLIPPY_COMMAND"
+          fi
 
       - name: cargo test
-        if: inputs.test
+        if: ${{ !cancelled() && inputs.test }}
         working-directory: ${{ inputs.working-directory }}
         env:
           TEST_COMMAND: ${{ inputs.test-command }}
-        run: bash -euo pipefail -c "$TEST_COMMAND"
+        run: |
+          if [[ "$DEV_SHELL" == true ]]; then
+            nix develop --command bash -euo pipefail -c "$TEST_COMMAND"
+          else
+            bash -euo pipefail -c "$TEST_COMMAND"
+          fi
 
       - name: nix flake check
-        if: inputs.flake-check
+        if: ${{ !cancelled() && inputs.flake-check }}
         env:
           FLAKE_CHECK_COMMAND: ${{ inputs.flake-check-command }}
         run: bash -euo pipefail -c "$FLAKE_CHECK_COMMAND"

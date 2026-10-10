@@ -1,0 +1,14 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  actions:
+    # actionlint 1.7.12 rejects the $/ self-repository syntax zizmor prefers.
+    uses: ./.github/workflows/actions-lint.yml # zizmor: ignore[self-repository]

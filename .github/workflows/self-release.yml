@@ -42,13 +42,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION: ${{ steps.version.outputs.full }}
         run: |
-          SHA=""
-          if [[ "${{ github.event_name }}" == "push" ]]; then
+          if [[ "$EVENT_NAME" == "push" ]]; then
             # Only release when the VERSION bump commit (before) differs from
             # the current value; skip if the tag already exists.
-            if gh api "/repos/${REPOSITORY}/git/ref/tags/${{ steps.version.outputs.full }}" >/dev/null 2>&1; then
-              echo "Tag ${{ steps.version.outputs.full }} already exists; skipping."
+            if gh api "/repos/${REPOSITORY}/git/ref/tags/${VERSION}" >/dev/null 2>&1; then
+              echo "Tag ${VERSION} already exists; skipping."
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -94,5 +95,5 @@ jobs:
               --title "Release ${VERSION}" \
               --target "$SHA" \
               --notes "Reusable workflows at ${VERSION}. Pin \`@${MAJOR}\` (or \`@${VERSION}\`)." \
-              $FLAGS
+              ${FLAGS:+"$FLAGS"}
           fi

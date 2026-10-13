@@ -214,9 +214,6 @@ jobs:
         env:
           CURRENT_TAG: ${{ inputs.version }}
         run: |
-          # Fetch all tags
-          git fetch --tags
-
           # Get all stable tags (pure semver: vX.Y.Z with no suffix)
           STABLE_TAGS=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
 

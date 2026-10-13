@@ -1,0 +1,47 @@
+name: Auto-merge
+
+on:
+  workflow_call:
+    inputs:
+      authors:
+        description: Space-separated users whose pull requests get auto-merge turned on.
+        type: string
+        default: dependabot[bot] manic-bot[bot]
+      merge-method:
+        description: merge, rebase, or squash. Ignored on branches with a merge queue.
+        type: string
+        default: rebase
+      approve:
+        description: Approve the pull request first, for branches that require a review.
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    if: contains(format(' {0} ', inputs.authors), format(' {0} ', github.event.pull_request.user.login))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      - name: Approve
+        if: inputs.approve
+        run: gh pr review --approve "$PR_URL"
+
+      - name: Enable auto-merge
+        env:
+          MERGE_METHOD: ${{ inputs.merge-method }}
+        run: |
+          case "$MERGE_METHOD" in
+            merge | rebase | squash) ;;
+            *)
+              echo "::error::merge-method must be merge, rebase, or squash; got: $MERGE_METHOD"
+              exit 1
+              ;;
+          esac
+          gh pr merge --auto "--${MERGE_METHOD}" "$PR_URL"

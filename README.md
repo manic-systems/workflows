@@ -25,6 +25,7 @@ to fine-grain their behaviour.
 | `nix-checks.yml`      | Language-neutral Nix flake checks and optional package or named-check builds.                                                                                         |
 | `rust-audit.yml`      | Cargo dependency advisories, licenses, bans, and sources; standalone or Nix-backed.                                                                                   |
 | `actions-lint.yml`    | Lint the caller's workflows with actionlint and shellcheck, and audit them with zizmor.                                                                               |
+| `auto-merge.yml`      | Turn on auto-merge for Dependabot and manic-bot pull requests.                                                                                                        |
 | `pins-update.yml`     | Weekly tack pin bumps in one pull request, opened by a GitHub App so CI runs on it.                                                                                   |
 
 <!--markdownlint-enable MD013-->
@@ -81,6 +82,28 @@ bumped and copy in [`examples/pins-update.yml`](examples/pins-update.yml).
 | `flake-arguments` | _(empty)_                   | Extra `nix flake update` arguments, e.g. input names.                  |
 | `branch`          | `pins-update`               | Branch the update is force-pushed to.                                  |
 | `auto-merge`      | `false`                     | Turn on auto-merge so the PR lands once required checks pass.          |
+
+<!--markdownlint-enable MD013-->
+
+## Auto-merge - `auto-merge.yml`
+
+Turns on auto-merge for pull requests from Dependabot and manic-bot, so they
+land by themselves once the branch's required checks pass. With no required
+checks on the branch, GitHub merges them right away, so gate the branch on
+something first. If the branch also wants a review, set `approve: true`, and
+turn on "Allow GitHub Actions to create and approve pull requests" in the org's
+Actions settings. Copy in [`examples/auto-merge.yml`](examples/auto-merge.yml)
+and enable "Allow auto-merge" in the repo settings.
+
+### Inputs
+
+<!--markdownlint-disable MD013-->
+
+| Input          | Default                          | Description                                                      |
+| -------------- | -------------------------------- | ---------------------------------------------------------------- |
+| `authors`      | `dependabot[bot] manic-bot[bot]` | Space-separated users whose pull requests get auto-merge.        |
+| `merge-method` | `rebase`                         | `merge`, `rebase`, or `squash`. Ignored with a merge queue.      |
+| `approve`      | `false`                          | Approve the pull request first, for branches that need a review. |
 
 <!--markdownlint-enable MD013-->
 

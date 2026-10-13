@@ -1,0 +1,13 @@
+# Copy this into a consuming repo as .github/workflows/auto-merge.yml.
+name: Auto-merge
+
+on: pull_request
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: manic-systems/workflows/.github/workflows/auto-merge.yml@v2

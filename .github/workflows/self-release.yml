@@ -96,7 +96,7 @@ jobs:
             echo "Release ${VERSION} already exists."
           else
             gh release create "$VERSION" \
-              --title "Release ${VERSION}" \
+              --title "${VERSION}" \
               --target "$SHA" \
               --notes "Reusable workflows at ${VERSION}. Pin \`@${MAJOR}\` (or \`@${VERSION}\`)." \
               ${FLAGS:+"$FLAGS"}

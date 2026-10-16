@@ -188,7 +188,7 @@ jobs:
             FLAGS+=(--prerelease)
           fi
           gh release create "${VERSION}" \
-            --title "Release ${VERSION}" \
+            --title "${VERSION}" \
             --notes "$(cat <<EOF
           ## Release ${VERSION}
 

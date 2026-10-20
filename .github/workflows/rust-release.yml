@@ -30,6 +30,10 @@ on:
         description: "prepare: branch used to detect whether the version changed."
         type: string
         default: "main"
+      assets:
+        description: "prepare: whether build legs upload assets and finalize writes the notes. Set false for a library release, which gets its generated notes up front."
+        type: boolean
+        default: true
       install-nix:
         description: "prepare/publish: install Nix before reading the version or publishing, e.g. for a publish-command that runs in the dev shell."
         type: boolean
@@ -180,24 +184,36 @@ jobs:
         if: steps.check_version.outputs.skip_workflow != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
           VERSION: ${{ steps.read_version.outputs.version }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+          ASSETS: ${{ inputs.assets }}
           IS_PRERELEASE: ${{ steps.prerelease_check.outputs.is_prerelease }}
         run: |
           FLAGS=()
           if [[ "${IS_PRERELEASE}" == "true" ]]; then
             FLAGS+=(--prerelease)
           fi
-          gh release create "${VERSION}" \
-            --title "${VERSION}" \
-            --notes "$(cat <<EOF
+
+          if [[ "${ASSETS}" == "true" ]]; then
+            FLAGS+=(--notes "$(cat <<EOF
           ## Release ${VERSION}
 
           **Note**: Assets will be uploaded once builds complete successfully.
 
           <!-- Changelog will be generated after successful asset uploads -->
           EOF
-          )" \
-            "${FLAGS[@]}"
+          )")
+          else
+            PREVIOUS=$(gh api "/repos/${REPOSITORY}/git/matching-refs/tags/${TAG_PREFIX}" \
+              --jq '.[].ref | ltrimstr("refs/tags/")' | grep -vxF "${VERSION}" | sort -V | tail -n1 || true)
+            FLAGS+=(--generate-notes)
+            if [[ -n "${PREVIOUS}" ]]; then
+              FLAGS+=(--notes-start-tag "${PREVIOUS}")
+            fi
+          fi
+
+          gh release create "${VERSION}" --title "${VERSION}" "${FLAGS[@]}"
 
   # ---- stage: finalize ----
   release-notes:

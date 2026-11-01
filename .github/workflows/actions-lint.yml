@@ -57,12 +57,14 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       # actionlint 1.7.12 predates the ubuntu-26.04 runner images
-      # (rhysd/actionlint#743).
+      # (rhysd/actionlint#743) and the `queue` concurrency key
+      # (rhysd/actionlint#657).
       - name: actionlint
         if: steps.changes.outputs.lint == 'true'
         run: >-
           nix shell nixpkgs#actionlint nixpkgs#shellcheck --command
           actionlint -ignore 'label "ubuntu-26\.04(-arm)?" is unknown'
+          -ignore 'unexpected key "queue" for "concurrency" section'
 
       - name: zizmor
         if: ${{ !cancelled() && steps.changes.outputs.lint == 'true' }}
